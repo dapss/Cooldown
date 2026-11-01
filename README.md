@@ -5,6 +5,9 @@ A tiny Windows 11 tray app that counts down to weekly AI usage resets (e.g. Clau
 - **Right-click the tray icon** to see live countdowns for every reset, no window needed.
 - **Hover** the icon for a short summary; **left-click** to show/hide a small always-on-top widget.
 - **Edit resets...** opens a window to add, rename, or remove resets and set their day and time.
+- **Session limits (optional):** tick "Also has a limit every 5 hours" for rolling windows like Claude's
+  5-hour limit. Click its row in the tray menu to start it now or enter the reset time the AI shows you.
+- **Notifications** when a weekly limit or a session window resets (can be turned off in the menu).
 - Optional 12-hour (AM/PM) display, start with Windows, and widget position memory.
 
 ## Build
@@ -21,5 +24,6 @@ New tray icons start hidden behind the `^` arrow; drag it onto the taskbar to ke
 ## Files
 
 - `ResetTimer.cs`: the whole app.
-- `resets.txt`: your resets, created next to the exe on first run (`Name | Day | HH:mm`).
+- `resets.txt`: your resets, created next to the exe on first run (`Name | Day | HH:mm | 5h`).
+- `sessions.txt`: when each running session window resets.
 - `settings.txt`: widget and display preferences.
