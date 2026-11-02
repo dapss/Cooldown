@@ -248,6 +248,9 @@ class TrayApp : ApplicationContext
 {
     const string AppName = "ResetTimer";
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    // Task Manager's Startup apps on/off switch. Newer Windows 11 builds skip Run entries
+    // that have no value here, so it has to be written alongside the Run entry.
+    const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
     readonly NotifyIcon tray = new NotifyIcon();
     readonly ContextMenuStrip menu = new ContextMenuStrip();
@@ -310,6 +313,8 @@ class TrayApp : ApplicationContext
             startup.Checked = StartupEnabled();
             Tick();
         };
+
+        try { RepairStartup(); } catch (Exception) { }  // registry locked down: leave it as is
 
         tray.Icon = icon;
         tray.Text = "Reset Timer";
@@ -478,16 +483,45 @@ class TrayApp : ApplicationContext
 
     static bool StartupEnabled()
     {
-        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey))
-            return k != null && k.GetValue(AppName) != null;
+        using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKey))
+        using (RegistryKey approved = Registry.CurrentUser.OpenSubKey(ApprovedKey))
+        {
+            if (run == null || run.GetValue(AppName) == null) return false;
+            var flag = approved == null ? null : approved.GetValue(AppName) as byte[];
+            return flag != null && flag.Length > 0 && (flag[0] & 1) == 0;  // 02 = enabled, 03 = disabled
+        }
+    }
+
+    // Older builds of this app wrote only the Run entry; add the missing approval for them.
+    // A flag the user set in Task Manager (enabled or disabled) is left alone.
+    static void RepairStartup()
+    {
+        using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKey))
+        using (RegistryKey approved = Registry.CurrentUser.OpenSubKey(ApprovedKey))
+        {
+            if (run == null || run.GetValue(AppName) == null) return;
+            if (approved != null && approved.GetValue(AppName) != null) return;
+        }
+        SetStartup(true);
     }
 
     static void SetStartup(bool on)
     {
-        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(RunKey))
+        using (RegistryKey run = Registry.CurrentUser.CreateSubKey(RunKey))
+        using (RegistryKey approved = Registry.CurrentUser.CreateSubKey(ApprovedKey))
         {
-            if (on) k.SetValue(AppName, "\"" + Application.ExecutablePath + "\"");
-            else k.DeleteValue(AppName, false);
+            if (on)
+            {
+                run.SetValue(AppName, "\"" + Application.ExecutablePath + "\"");
+                var flag = new byte[12];
+                flag[0] = 2;
+                approved.SetValue(AppName, flag, RegistryValueKind.Binary);
+            }
+            else
+            {
+                run.DeleteValue(AppName, false);
+                approved.DeleteValue(AppName, false);
+            }
         }
     }
 
