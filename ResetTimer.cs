@@ -1,4 +1,4 @@
-// Tray app (plus optional always-on-top widget) that counts down to weekly AI usage resets.
+// Tray app (plus an optional floating island, in Island.cs) that counts down to AI usage resets.
 // Build: build.bat (uses the C# compiler that ships with Windows).
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.Reflection;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -34,11 +35,8 @@ static class Program
 static class Theme
 {
     public static readonly Color Bg = Color.FromArgb(28, 28, 30);
-    public static readonly Color Fg = Color.FromArgb(235, 235, 235);
-    public static readonly Color Dim = Color.FromArgb(140, 140, 145);
     public static readonly Color Soon = Color.FromArgb(120, 200, 150);
     public static readonly Color SoonOnLight = Color.FromArgb(25, 125, 65);
-    public static readonly Color Warn = Color.FromArgb(230, 160, 90);
 }
 
 class Reset
@@ -82,11 +80,20 @@ class Reset
         return Name + "   (" + Schedule + (SessionHours > 0 ? ", " + SessionHours + "h" : "") + ")";
     }
 
-    public static string Long(TimeSpan t) { return string.Format("{0}d {1:00}h {2:00}m {3:00}s", t.Days, t.Hours, t.Minutes, t.Seconds); }
+    // Leaves out units that are zero at the front, and shows seconds only in the last day, when
+    // they matter: "2d 21h 05m", "21h 05m 42s", "5m 42s".
+    public static string Long(TimeSpan t)
+    {
+        if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+        if (t.Days > 0) return string.Format("{0}d {1}h {2:00}m", t.Days, t.Hours, t.Minutes);
+        return Hms(t);
+    }
+
     public static string Hms(TimeSpan t)
     {
         if (t < TimeSpan.Zero) t = TimeSpan.Zero;
-        return string.Format("{0}h {1:00}m {2:00}s", (int)t.TotalHours, t.Minutes, t.Seconds);
+        if (t.TotalHours >= 1) return string.Format("{0}h {1:00}m {2:00}s", (int)t.TotalHours, t.Minutes, t.Seconds);
+        return string.Format("{0}m {1:00}s", t.Minutes, t.Seconds);
     }
     public static string Short(TimeSpan t) { return string.Format("{0}d {1}h {2}m", t.Days, t.Hours, t.Minutes); }
     public static string When(DateTime d) { return d.ToString("dddd, d MMM") + " at " + Clock(d.TimeOfDay); }
@@ -96,7 +103,7 @@ class Reset
 // settings.txt the window/tray preferences.
 static class Store
 {
-    static readonly string Dir = AppDomain.CurrentDomain.BaseDirectory;
+    public static readonly string Dir = FindDataFolder();
     public static readonly string ResetsPath = Path.Combine(Dir, "resets.txt");
     static readonly string SessionsPath = Path.Combine(Dir, "sessions.txt");
     static readonly string[] TimeFormats = { "H:mm", "HH:mm", "h:mm tt", "h:mmtt", "h tt", "htt" };
@@ -107,7 +114,7 @@ static class Store
 
     public static List<Reset> LoadResets(List<string> errors)
     {
-        if (!File.Exists(ResetsPath)) File.WriteAllText(ResetsPath, Header + "\r\nClaude | Sunday | 16:00 | 5h\r\n");
+        if (!File.Exists(ResetsPath) || new FileInfo(ResetsPath).Length == 0) File.WriteAllText(ResetsPath, Header + "\r\nClaude | Sunday | 16:00 | 5h\r\n");
         var list = new List<Reset>();
         foreach (string raw in File.ReadAllLines(ResetsPath))
         {
@@ -176,6 +183,31 @@ static class Store
         try { File.WriteAllText(SessionsPath, sb.ToString()); } catch (Exception) { }
     }
 
+    // Next to the exe when that folder is writable, so the app stays portable. Otherwise, such as in
+    // Program Files, in the user's AppData folder.
+    static string FindDataFolder()
+    {
+        string local = AppDomain.CurrentDomain.BaseDirectory;
+        if (CanWrite(Path.Combine(local, "resets.txt"))) return local;
+
+        string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ResetTimer");
+        try { Directory.CreateDirectory(folder); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return folder;
+    }
+
+    static bool CanWrite(string path)
+    {
+        try
+        {
+            using (new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite)) { }
+            return true;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
     static string CleanName(string name)
     {
         name = name.Replace('|', '/').Trim();
@@ -201,16 +233,17 @@ static class Store
 
 class Settings
 {
-    static readonly string FilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.txt");
-    public bool ShowWidget = true;
-    public bool OnTop = true;
+    static readonly string FilePath = Path.Combine(Store.Dir, "settings.txt");
+    public string Mode = "island";  // "tray", "island" (floating) or "taskbar"
+    public int TaskbarSpot = -1;      // the pill's center in the taskbar, in pixels from its right end; -1 = default
     public bool Notify = true;
     public bool Use12h = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern.Contains("t");  // follow Windows until set
-    public Point? Position;
+    public Point? IslandPosition;
 
     public static Settings Load()
     {
         var s = new Settings();
+        bool sawMode = false;
         try
         {
             foreach (string line in File.ReadAllLines(FilePath))
@@ -220,13 +253,14 @@ class Settings
                 string v = kv[1].Trim();
                 switch (kv[0].Trim())
                 {
-                    case "widget": s.ShowWidget = v == "1"; break;
-                    case "ontop": s.OnTop = v == "1"; break;
+                    case "mode": s.Mode = v == "taskbar" || v == "island" ? v : "tray"; sawMode = true; break;
+                    case "widget": if (!sawMode) s.Mode = v == "1" ? "island" : "tray"; break;  // from before the island existed
+                    case "taskbar": s.TaskbarSpot = int.Parse(v); break;
                     case "ampm": s.Use12h = v == "1"; break;
                     case "notify": s.Notify = v == "1"; break;
-                    case "position":
+                    case "island":
                         string[] xy = v.Split(',');
-                        s.Position = new Point(int.Parse(xy[0]), int.Parse(xy[1]));
+                        s.IslandPosition = new Point(int.Parse(xy[0]), int.Parse(xy[1]));
                         break;
                 }
             }
@@ -237,9 +271,10 @@ class Settings
 
     public void Save()
     {
-        string text = "widget=" + (ShowWidget ? 1 : 0) + "\r\nontop=" + (OnTop ? 1 : 0)
+        string text = "mode=" + Mode
             + "\r\nampm=" + (Use12h ? 1 : 0) + "\r\nnotify=" + (Notify ? 1 : 0) + "\r\n";
-        if (Position.HasValue) text += "position=" + Position.Value.X + "," + Position.Value.Y + "\r\n";
+        if (IslandPosition.HasValue) text += "island=" + IslandPosition.Value.X + "," + IslandPosition.Value.Y + "\r\n";
+        if (TaskbarSpot >= 0) text += "taskbar=" + TaskbarSpot + "\r\n";
         try { File.WriteAllText(FilePath, text); } catch (Exception) { }
     }
 }
@@ -247,21 +282,20 @@ class Settings
 class TrayApp : ApplicationContext
 {
     const string AppName = "ResetTimer";
+    // Only the Run entry is written. Windows adds its own Startup apps approval for it at the next
+    // sign-in; writing that approval ourselves makes Windows skip the entry.
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    // Task Manager's Startup apps on/off switch. Newer Windows 11 builds skip Run entries
-    // that have no value here, so it has to be written alongside the Run entry.
-    const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
     readonly NotifyIcon tray = new NotifyIcon();
     readonly ContextMenuStrip menu = new ContextMenuStrip();
     readonly ToolStripItem[] fixedItems;
-    readonly ToolStripMenuItem showWidget, onTop, ampm, notify, startup;
+    readonly ToolStripMenuItem trayMode, islandMode, taskbarMode, ampm, notify, startup;
     readonly List<ToolStripMenuItem> resetItems = new List<ToolStripMenuItem>();
     readonly List<ToolStripMenuItem> sessionItems = new List<ToolStripMenuItem>();  // null where no session limit
     readonly Timer timer = new Timer();
     readonly Settings settings = Settings.Load();
     readonly Icon icon = MakeIcon();
-    readonly Widget widget;
+    readonly Island island;
     List<Reset> resets = new List<Reset>();
     DateTime configStamp;
     Editor editor;
@@ -269,17 +303,17 @@ class TrayApp : ApplicationContext
 
     public TrayApp()
     {
-        widget = new Widget(menu);
-        widget.TopMost = settings.OnTop;
-        widget.Moved += () => { settings.Position = widget.Location; settings.Save(); };
-        widget.HideRequested += () => SetWidgetVisible(false);
+        island = new Island(menu);
+        island.Moved += p => { settings.IslandPosition = p; settings.Save(); };
+        island.DockMoved += x => { settings.TaskbarSpot = x; settings.Save(); };
+        island.StartSession += r => SetSessionEnd(r, DateTime.Now.AddHours(r.SessionHours));
+        island.UndoSession += SetSessionEnd;
+        island.AdjustSession += EditSession;
+        island.EditResets += OpenEditor;
 
-        showWidget = new ToolStripMenuItem("Show widget", null, (s, e) => SetWidgetVisible(!widget.Visible));
-        onTop = new ToolStripMenuItem("Widget always on top", null, (s, e) =>
-        {
-            settings.OnTop = widget.TopMost = !widget.TopMost;
-            settings.Save();
-        });
+        trayMode = new ToolStripMenuItem("Tray only", null, (s, e) => SetMode("tray"));
+        islandMode = new ToolStripMenuItem("Floating island", null, (s, e) => SetMode("island"));
+        taskbarMode = new ToolStripMenuItem("In the taskbar", null, (s, e) => SetMode("taskbar"));
         Reset.Use12h = settings.Use12h;
         ampm = new ToolStripMenuItem("12-hour time (AM/PM)", null, (s, e) =>
         {
@@ -299,31 +333,33 @@ class TrayApp : ApplicationContext
         {
             new ToolStripSeparator(),
             new ToolStripMenuItem("Edit resets...", null, (s, e) => OpenEditor()),
-            showWidget, onTop, ampm, notify, startup,
+            new ToolStripMenuItem("Mode", null, trayMode, islandMode, taskbarMode),
+            ampm, notify, startup,
             new ToolStripSeparator(),
             new ToolStripMenuItem("Exit", null, (s, e) => Exit()),
         };
         menu.ShowItemToolTips = true;
         menu.Opening += (s, e) =>
         {
-            showWidget.Checked = widget.Visible;
-            onTop.Checked = widget.TopMost;
+            trayMode.Checked = settings.Mode == "tray";
+            islandMode.Checked = settings.Mode == "island";
+            taskbarMode.Checked = settings.Mode == "taskbar";
             ampm.Checked = Reset.Use12h;
             notify.Checked = settings.Notify;
             startup.Checked = StartupEnabled();
             Tick();
         };
 
-        try { RepairStartup(); } catch (Exception) { }  // registry locked down: leave it as is
+        try { RefreshStartupPath(); } catch (Exception) { }  // registry locked down: leave it as is
 
         tray.Icon = icon;
         tray.Text = "Reset Timer";
         tray.ContextMenuStrip = menu;
-        tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) SetWidgetVisible(!widget.Visible); };
+        tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowTrayMenu(); };
         tray.Visible = true;
 
         Reload();
-        if (settings.ShowWidget) widget.ShowAt(settings.Position);
+        ShowIsland();
         timer.Tick += (s, e) => Tick();
         timer.Interval = 1000;
         timer.Start();
@@ -335,7 +371,7 @@ class TrayApp : ApplicationContext
         var errors = new List<string>();
         resets = Store.LoadResets(errors);
         configStamp = File.GetLastWriteTimeUtc(Store.ResetsPath);
-        widget.SetResets(resets, errors);
+        island.SetResets(resets);
 
         menu.Items.Clear();
         resetItems.Clear();
@@ -368,12 +404,22 @@ class TrayApp : ApplicationContext
     void EditSession(Reset r)
     {
         using (var dialog = new SessionDialog(r, icon))
-        {
-            if (dialog.ShowDialog() != DialogResult.OK) return;
-            r.SessionEnd = dialog.End;
-            Store.SaveSessions(resets);
-            Tick();
-        }
+            if (dialog.ShowDialog() == DialogResult.OK) SetSessionEnd(r, dialog.End);
+    }
+
+    void SetSessionEnd(Reset r, DateTime? end)
+    {
+        r.SessionEnd = end;
+        Store.SaveSessions(resets);
+        Tick();
+    }
+
+    // The menu NotifyIcon shows on right-click, positioned the same way, for a left-click.
+    void ShowTrayMenu()
+    {
+        var show = typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (show != null) show.Invoke(tray, null);
+        else menu.Show(Cursor.Position);
     }
 
     void Notify(string title, string text)
@@ -430,7 +476,7 @@ class TrayApp : ApplicationContext
             tip.Append('\n');
         }
         if (sessionsChanged) Store.SaveSessions(resets);
-        if (widget.Visible) widget.UpdateTimes(resets, now);
+        island.UpdateTimes(now);
 
         // NotifyIcon.Text throws past 63 chars on older .NET Framework builds.
         string text = resets.Count == 0 ? "Reset Timer" : tip.ToString().TrimEnd();
@@ -441,16 +487,19 @@ class TrayApp : ApplicationContext
         timer.Interval = 1000 - DateTime.Now.Millisecond + 5;
     }
 
-    void SetWidgetVisible(bool visible)
+    void SetMode(string mode)
     {
-        if (visible)
-        {
-            widget.UpdateTimes(resets, DateTime.Now);
-            widget.ShowAt(settings.Position);
-        }
-        else widget.Hide();
-        settings.ShowWidget = visible;
+        if (mode == settings.Mode) return;
+        settings.Mode = mode;
         settings.Save();
+        ShowIsland();
+    }
+
+    void ShowIsland()
+    {
+        if (settings.Mode == "island") island.ShowAt(settings.IslandPosition);
+        else if (settings.Mode == "taskbar") island.ShowDocked(settings.TaskbarSpot);
+        else island.Hide();
     }
 
     void OpenEditor()
@@ -481,47 +530,32 @@ class TrayApp : ApplicationContext
         ExitThread();
     }
 
+    static string StartupCommand { get { return "\"" + Application.ExecutablePath + "\""; } }
+
     static bool StartupEnabled()
     {
         using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKey))
-        using (RegistryKey approved = Registry.CurrentUser.OpenSubKey(ApprovedKey))
-        {
-            if (run == null || run.GetValue(AppName) == null) return false;
-            var flag = approved == null ? null : approved.GetValue(AppName) as byte[];
-            return flag != null && flag.Length > 0 && (flag[0] & 1) == 0;  // 02 = enabled, 03 = disabled
-        }
-    }
-
-    // Older builds of this app wrote only the Run entry; add the missing approval for them.
-    // A flag the user set in Task Manager (enabled or disabled) is left alone.
-    static void RepairStartup()
-    {
-        using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKey))
-        using (RegistryKey approved = Registry.CurrentUser.OpenSubKey(ApprovedKey))
-        {
-            if (run == null || run.GetValue(AppName) == null) return;
-            if (approved != null && approved.GetValue(AppName) != null) return;
-        }
-        SetStartup(true);
+            return run != null && run.GetValue(AppName) != null;
     }
 
     static void SetStartup(bool on)
     {
         using (RegistryKey run = Registry.CurrentUser.CreateSubKey(RunKey))
-        using (RegistryKey approved = Registry.CurrentUser.CreateSubKey(ApprovedKey))
         {
-            if (on)
-            {
-                run.SetValue(AppName, "\"" + Application.ExecutablePath + "\"");
-                var flag = new byte[12];
-                flag[0] = 2;
-                approved.SetValue(AppName, flag, RegistryValueKind.Binary);
-            }
-            else
-            {
-                run.DeleteValue(AppName, false);
-                approved.DeleteValue(AppName, false);
-            }
+            if (on) run.SetValue(AppName, StartupCommand);
+            else run.DeleteValue(AppName, false);
+        }
+    }
+
+    // If Start with Windows is on but points somewhere else, the exe was moved: point it here instead.
+    static void RefreshStartupPath()
+    {
+        using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKey, true))
+        {
+            if (run == null) return;
+            string saved = run.GetValue(AppName) as string;
+            if (saved != null && !string.Equals(saved, StartupCommand, StringComparison.OrdinalIgnoreCase))
+                run.SetValue(AppName, StartupCommand);
         }
     }
 
@@ -546,188 +580,6 @@ class TrayApp : ApplicationContext
     }
 }
 
-class Widget : Form
-{
-    [DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-
-    public event Action Moved;
-    public event Action HideRequested;
-
-    readonly ContextMenuStrip menu;
-    readonly List<Label> countdowns = new List<Label>();
-    readonly List<Label> sessionCountdowns = new List<Label>();  // null where no session limit
-    readonly float scale;
-
-    public Widget(ContextMenuStrip menu)
-    {
-        this.menu = menu;
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        BackColor = Theme.Bg;
-        StartPosition = FormStartPosition.Manual;
-        Text = "ResetTimer";
-        ContextMenuStrip = menu;
-        MouseDown += StartDrag;
-        using (Graphics g = CreateGraphics()) scale = g.DpiX / 96f;
-    }
-
-    protected override bool ShowWithoutActivation { get { return true; } }
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            CreateParams cp = base.CreateParams;
-            cp.ClassStyle |= 0x20000;  // CS_DROPSHADOW
-            cp.ExStyle |= 0x80;        // WS_EX_TOOLWINDOW: keep out of Alt+Tab
-            return cp;
-        }
-    }
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        int round = 2;  // DWMWCP_ROUND (Windows 11 rounded corners)
-        try { DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int)); } catch { }
-    }
-
-    protected override void OnFormClosing(FormClosingEventArgs e)
-    {
-        // Alt+F4 hides the widget; the app keeps running in the tray.
-        if (e.CloseReason == CloseReason.UserClosing)
-        {
-            e.Cancel = true;
-            if (HideRequested != null) HideRequested();
-        }
-        base.OnFormClosing(e);
-    }
-
-    int S(int px) { return (int)Math.Round(px * scale); }
-
-    public void ShowAt(Point? saved)
-    {
-        if (saved.HasValue && OnScreen(saved.Value)) Location = saved.Value;
-        else
-        {
-            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
-            Location = new Point(wa.Right - Width - S(16), wa.Top + S(16));
-        }
-        Show();
-    }
-
-    bool OnScreen(Point p)
-    {
-        var bounds = new Rectangle(p, Size);
-        foreach (Screen s in Screen.AllScreens)
-            if (s.WorkingArea.IntersectsWith(bounds)) return true;
-        return false;  // saved spot is off-screen (monitor unplugged)
-    }
-
-    public void SetResets(List<Reset> resets, List<string> errors)
-    {
-        SuspendLayout();
-        while (Controls.Count > 0) Controls[0].Dispose();
-        countdowns.Clear();
-        sessionCountdowns.Clear();
-
-        int pad = S(14), width = S(310), countW = S(165), rowH = S(40), gap = S(8);
-        int y = pad;
-        foreach (Reset r in resets)
-        {
-            Add(new Label
-            {
-                Text = r.Name, AutoSize = false, AutoEllipsis = true,
-                Location = new Point(pad, y), Size = new Size(width - pad * 2 - countW - S(8), S(20)),
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Theme.Fg,
-            });
-            Add(new Label
-            {
-                Text = r.Schedule, AutoSize = true, Location = new Point(pad, y + S(21)),
-                Font = new Font("Segoe UI", 8.25f), ForeColor = Theme.Dim,
-            });
-            countdowns.Add(Add(new Label
-            {
-                AutoSize = false, TextAlign = ContentAlignment.MiddleRight,
-                Location = new Point(width - pad - countW, y), Size = new Size(countW, rowH),
-                Font = new Font("Consolas", 14f), ForeColor = Theme.Fg,
-            }));
-            y += rowH;
-
-            Label session = null;
-            if (r.SessionHours > 0)
-            {
-                Add(new Label
-                {
-                    Text = r.SessionLabel, AutoSize = true, Location = new Point(pad, y + S(4)),
-                    Font = new Font("Segoe UI", 8.25f), ForeColor = Theme.Dim,
-                });
-                session = Add(new Label
-                {
-                    AutoSize = false, TextAlign = ContentAlignment.MiddleRight,
-                    Location = new Point(width - pad - countW, y), Size = new Size(countW, S(24)),
-                    Font = new Font("Consolas", 11f), ForeColor = Theme.Fg,
-                });
-                y += S(24);
-            }
-            sessionCountdowns.Add(session);
-            y += gap;
-        }
-        if (resets.Count > 0) y -= gap;
-
-        var notes = new List<string>();
-        foreach (string err in errors) notes.Add("Can't read: " + err);
-        if (resets.Count == 0 && errors.Count == 0) notes.Add("No resets yet - right-click > Edit resets...");
-        foreach (string note in notes)
-        {
-            Add(new Label
-            {
-                Text = note, AutoSize = false, AutoEllipsis = true,
-                Location = new Point(pad, y + S(4)), Size = new Size(width - pad * 2, S(18)),
-                Font = new Font("Segoe UI", 8.25f), ForeColor = Theme.Warn,
-            });
-            y += S(22);
-        }
-
-        ClientSize = new Size(width, y + pad);
-        ResumeLayout();
-    }
-
-    public void UpdateTimes(List<Reset> resets, DateTime now)
-    {
-        for (int i = 0; i < resets.Count && i < countdowns.Count; i++)
-        {
-            TimeSpan left = resets[i].Next(now) - now;
-            countdowns[i].Text = Reset.Long(left);
-            countdowns[i].ForeColor = left.TotalHours < 24 ? Theme.Soon : Theme.Fg;
-
-            Label session = sessionCountdowns[i];
-            if (session == null) continue;
-            DateTime? end = resets[i].SessionEnd;
-            session.Text = end.HasValue ? Reset.Hms(end.Value - now) : "not started";
-            session.ForeColor = end.HasValue ? Theme.Fg : Theme.Dim;
-        }
-    }
-
-    T Add<T>(T c) where T : Control
-    {
-        c.BackColor = Theme.Bg;
-        c.ContextMenuStrip = menu;
-        c.MouseDown += StartDrag;
-        Controls.Add(c);
-        return c;
-    }
-
-    void StartDrag(object sender, MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero);  // WM_NCLBUTTONDOWN on HTCAPTION; returns when drag ends
-        if (Moved != null) Moved();
-    }
-}
-
 class ResetList : ListBox
 {
     public void RefreshAt(int index) { RefreshItem(index); }
@@ -745,7 +597,7 @@ class Editor : Form
     readonly Label preview = new Label();
     readonly Button remove;
     readonly float scale;
-    bool loading;
+    bool loading, dirty, discard;
 
     public bool Saved { get; private set; }
     public List<Reset> Result { get { return items; } }
@@ -798,8 +650,8 @@ class Editor : Form
         Controls.Add(hours);
         AddLabel("hours", hours.Right + S(6), S(181));
 
-        Button save = AddButton("Save", S(270), (s, e) => { Saved = true; Close(); });
-        Button cancel = AddButton("Cancel", S(366), (s, e) => Close());
+        Button save = AddButton("Save", S(270), (s, e) => TrySave());
+        Button cancel = AddButton("Cancel", S(366), (s, e) => { discard = true; Close(); });
         AcceptButton = save;
         CancelButton = cancel;
 
@@ -812,7 +664,7 @@ class Editor : Form
     public void ApplyClockFormat()
     {
         time.CustomFormat = Reset.Use12h ? "h:mm tt" : "HH:mm";
-        for (int i = 0; i < items.Count; i++) list.RefreshAt(i);
+        for (int i = 0; i < items.Count; i++) RefreshRow(i);
         if (list.SelectedIndex >= 0) UpdatePreview(items[list.SelectedIndex]);
     }
 
@@ -858,6 +710,16 @@ class Editor : Form
         loading = false;
     }
 
+    // Redrawing a row briefly clears the list's selection, which would run ShowSelected, disable the
+    // fields and move focus off the name box after the first letter typed. So it's done as "loading".
+    void RefreshRow(int i)
+    {
+        bool was = loading;
+        loading = true;
+        list.RefreshAt(i);
+        loading = was;
+    }
+
     void EditSelected()
     {
         int i = list.SelectedIndex;
@@ -868,8 +730,49 @@ class Editor : Form
         r.Time = new TimeSpan(time.Value.Hour, time.Value.Minute, 0);
         r.SessionHours = hasSession.Checked ? (int)hours.Value : 0;
         if (r.SessionHours == 0) r.SessionEnd = null;
-        list.RefreshAt(i);
+        RefreshRow(i);
         UpdatePreview(r);
+        dirty = true;
+    }
+
+    // Closing with the X (or quitting) with unsaved changes asks first. Cancel means discard.
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        base.OnFormClosing(e);
+        if (Saved || discard || !dirty) return;
+        DialogResult answer = MessageBox.Show(this, "Save your changes to the resets?", "Edit resets",
+            MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+        if (answer == DialogResult.Cancel) e.Cancel = true;
+        else if (answer == DialogResult.Yes) { if (!CheckNames()) e.Cancel = true; else Saved = true; }
+    }
+
+    void TrySave()
+    {
+        if (!CheckNames()) return;
+        Saved = true;
+        Close();
+    }
+
+    // Running sessions are saved by name, so two resets with one name would share a session.
+    bool CheckNames()
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < items.Count; i++)
+        {
+            string n = items[i].Name.Replace('|', '/').Trim();
+            if (n.Length == 0) n = "Untitled";
+            if (seen.ContainsKey(n))
+            {
+                MessageBox.Show(this, "Two resets are both called \"" + n + "\". Give each one a different name.",
+                    "Edit resets", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                list.SelectedIndex = i;
+                name.Focus();
+                name.SelectAll();
+                return false;
+            }
+            seen[n] = i;
+        }
+        return true;
     }
 
     void UpdatePreview(Reset r)
@@ -881,6 +784,7 @@ class Editor : Form
     void AddReset()
     {
         var r = new Reset { Name = "New reset", Day = DayOfWeek.Sunday, Time = TimeSpan.Zero };
+        dirty = true;
         items.Add(r);
         list.Items.Add(r);
         list.SelectedIndex = items.Count - 1;
@@ -894,6 +798,7 @@ class Editor : Form
         if (i < 0) return;
         items.RemoveAt(i);
         list.Items.RemoveAt(i);
+        dirty = true;
         if (items.Count > 0) list.SelectedIndex = Math.Min(i, items.Count - 1);
         else ShowSelected();
     }
