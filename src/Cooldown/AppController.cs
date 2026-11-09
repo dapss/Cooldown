@@ -1,0 +1,232 @@
+using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Threading;
+using Cooldown.Core;
+using Wpf.Ui.Appearance;
+
+namespace Cooldown;
+
+// Owns the resets and settings, ticks once a second, and coordinates the tray icon, the island and
+// the main window.
+public class AppController
+{
+    public ObservableCollection<ResetView> Resets { get; } = new();
+    public Settings Settings { get; } = Settings.Load();
+    public List<string> LoadErrors { get; } = new();
+    public event Action? Ticked;
+
+    readonly DispatcherTimer timer = new(DispatcherPriority.Normal);
+    TrayIcon tray = null!;
+    IslandWindow island = null!;
+    MainWindow? main;
+    DateTime configStamp;
+
+    // Undo for Start: which reset, what its session end was before, and until when to offer it.
+    ResetView? undoFor;
+    DateTime? undoPrevious;
+    DateTime undoUntil;
+
+    public void Start()
+    {
+        Format.Use12h = Settings.Use12h;
+        Startup.RefreshPath();
+        Load();
+        tray = new TrayIcon(this);
+        island = new IslandWindow(this);
+        ApplyMode();
+        timer.Tick += (_, _) => Tick();
+        timer.Interval = TimeSpan.FromSeconds(1);
+        timer.Start();
+        Tick();
+        if (Store.FirstRun) OpenMain(Resets.FirstOrDefault(), firstRun: true);
+    }
+
+    void Load()
+    {
+        LoadErrors.Clear();
+        List<Reset> list = Store.LoadResets(LoadErrors);
+        configStamp = File.GetLastWriteTimeUtc(Store.ResetsPath);
+        Resets.Clear();
+        foreach (Reset r in list) Resets.Add(new ResetView(r, this));
+    }
+
+    // ---- editing ----
+
+    public bool NameTaken(string name, ResetView except) =>
+        Resets.Any(v => v != except && string.Equals(Store.CleanName(v.Model.Name), Store.CleanName(name), StringComparison.OrdinalIgnoreCase));
+
+    public ResetView Add()
+    {
+        string name = "New AI";
+        for (int i = 2; Resets.Any(v => string.Equals(v.Model.Name, name, StringComparison.OrdinalIgnoreCase)); i++) name = "New AI " + i;
+        var view = new ResetView(new Reset { Name = name, Day = DayOfWeek.Monday, Time = new TimeSpan(9, 0, 0) }, this);
+        Resets.Add(view);
+        Save();
+        return view;
+    }
+
+    public void Remove(ResetView view)
+    {
+        Resets.Remove(view);
+        Save();
+    }
+
+    // Writes both files; sessions first, so a renamed reset keeps its running session.
+    public void Save()
+    {
+        Store.SaveSessions(Resets.Select(v => v.Model));
+        Store.SaveResets(Resets.Select(v => v.Model));
+        configStamp = File.GetLastWriteTimeUtc(Store.ResetsPath);
+        Tick();
+    }
+
+    // ---- sessions ----
+
+    public void StartSession(ResetView view)
+    {
+        undoFor = view;
+        undoPrevious = view.Model.SessionEnd;
+        undoUntil = DateTime.Now.AddSeconds(8);
+        SetSessionEnd(view, DateTime.Now.AddHours(view.Model.SessionHours));
+    }
+
+    public bool CanUndo(ResetView view) => undoFor == view && DateTime.Now < undoUntil;
+
+    public void UndoStart(ResetView view)
+    {
+        if (!CanUndo(view)) return;
+        undoFor = null;
+        SetSessionEnd(view, undoPrevious);
+    }
+
+    public void SetSessionEnd(ResetView view, DateTime? end)
+    {
+        view.Model.SessionEnd = end;
+        Store.SaveSessions(Resets.Select(v => v.Model));
+        Tick();
+    }
+
+    // ---- clock ----
+
+    void Tick()
+    {
+        try { if (File.GetLastWriteTimeUtc(Store.ResetsPath) != configStamp) Load(); }
+        catch (Exception) { }  // file mid-save; try again next tick
+
+        DateTime now = DateTime.Now;
+        bool sessionsChanged = false;
+        foreach (ResetView v in Resets)
+        {
+            Reset r = v.Model;
+            DateTime next = r.Next(now);
+            if (r.LastNext != DateTime.MinValue && next > r.LastNext)
+                Notify(r.Name + " weekly limit has reset", "Next weekly reset: " + Format.When(next));
+            r.LastNext = next;
+
+            if (r.SessionEnd.HasValue && now >= r.SessionEnd.Value)
+            {
+                // Skip stale news, such as a window that ended while the PC was off overnight.
+                if (now - r.SessionEnd.Value < TimeSpan.FromHours(1))
+                    Notify(r.Name + " " + r.SessionLabel + " has reset", "You can start a new session.");
+                r.SessionEnd = null;
+                sessionsChanged = true;
+            }
+            v.Refresh(now);
+        }
+        if (sessionsChanged) Store.SaveSessions(Resets.Select(v => v.Model));
+        tray.Update();
+        island.UpdateTimes();
+        Ticked?.Invoke();
+
+        // Fire just after the next whole second so the display never skips.
+        timer.Interval = TimeSpan.FromMilliseconds(1000 - DateTime.Now.Millisecond + 5);
+    }
+
+    void Notify(string title, string text)
+    {
+        if (Settings.Notify) tray.Notify(title, text);
+    }
+
+    // ---- settings ----
+
+    public void SetMode(DisplayMode mode)
+    {
+        if (mode == Settings.Mode) return;
+        Settings.Mode = mode;
+        Settings.Save();
+        ApplyMode();
+    }
+
+    void ApplyMode()
+    {
+        if (Settings.Mode == DisplayMode.Island) island.ShowFloating(Settings.IslandPosition);
+        else if (Settings.Mode == DisplayMode.Taskbar) island.ShowDocked(Settings.TaskbarSpot);
+        else island.Hide();
+    }
+
+    public void SetUse12h(bool on)
+    {
+        Settings.Use12h = Format.Use12h = on;
+        Settings.Save();
+        Tick();
+    }
+
+    public void SetNotify(bool on)
+    {
+        Settings.Notify = on;
+        Settings.Save();
+    }
+
+    public void IslandMoved(Point pillTopCenter)
+    {
+        Settings.IslandPosition = pillTopCenter;
+        Settings.Save();
+    }
+
+    public void IslandDocked(int fromRight)
+    {
+        Settings.TaskbarSpot = fromRight;
+        Settings.Save();
+    }
+
+    // ---- windows ----
+
+    public void ShowMenu() => tray.ShowMenu();
+    public bool MenuOpen => tray.MenuOpen;
+
+    public void OpenMain(ResetView? select = null, bool settings = false, bool firstRun = false)
+    {
+        if (main == null)
+        {
+            ApplySystemTheme();
+            main = new MainWindow(this);
+            main.Closed += (_, _) => main = null;
+            main.Show();
+        }
+        if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
+        main.Activate();
+        Native.SetForegroundWindow(new System.Windows.Interop.WindowInteropHelper(main).Handle);
+        if (settings) main.ShowSettings();
+        else if (select != null) main.Select(select);
+        if (firstRun) main.ShowWelcome();
+    }
+
+    public static void ApplySystemTheme()
+    {
+        ApplicationTheme theme = ApplicationThemeManager.GetSystemTheme() switch
+        {
+            SystemTheme.Light or SystemTheme.Flow or SystemTheme.Sunrise => ApplicationTheme.Light,
+            _ => ApplicationTheme.Dark,
+        };
+        ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.Mica, true);
+    }
+
+    public void Exit()
+    {
+        timer.Stop();
+        tray.Dispose();
+        main?.Close();
+        island.Close();
+        Application.Current.Shutdown();
+    }
+}

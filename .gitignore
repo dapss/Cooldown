@@ -2,3 +2,5 @@
 resets.txt
 settings.txt
 sessions.txt
+bin/
+obj/

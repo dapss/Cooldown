@@ -1,0 +1,208 @@
+using System.Diagnostics;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using Cooldown.Core;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
+
+namespace Cooldown;
+
+// Add, edit and remove AIs, start or set session windows, and change settings. Every change is
+// saved as you make it.
+public partial class MainWindow : FluentWindow
+{
+    readonly AppController app;
+    ResetView? current;
+    bool loading;
+
+    public MainWindow(AppController app)
+    {
+        this.app = app;
+        InitializeComponent();
+        DataContext = app;
+        for (int i = 0; i < 7; i++) DayBox.Items.Add(((DayOfWeek)((i + 1) % 7)).ToString());  // Monday first
+        TimeBox.ValueChanged += Time_Changed;
+        SessionTimeBox.Value = DateTime.Now.AddHours(5).TimeOfDay;
+        DataPath.Text = Store.Dir;
+        VersionText.Text = "Cooldown " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) + "  ·  MIT license";
+        Loaded += (_, _) => SystemThemeWatcher.Watch(this, WindowBackdropType.Mica, true);
+        app.Resets.CollectionChanged += (_, _) => { if (current != null && !app.Resets.Contains(current)) Select(app.Resets.FirstOrDefault()); };
+
+        if (app.Resets.Count > 0) Select(app.Resets[0]);
+        else ShowPanel(EmptyPanel);
+    }
+
+    // ---- navigation ----
+
+    public void Select(ResetView? view)
+    {
+        if (view == null) { current = null; List.SelectedItem = null; ShowPanel(EmptyPanel); return; }
+        List.SelectedItem = view;  // runs List_SelectionChanged
+    }
+
+    public void ShowSettings()
+    {
+        List.SelectedItem = null;
+        current = null;
+        loading = true;
+        ModeTaskbar.IsChecked = app.Settings.Mode == DisplayMode.Taskbar;
+        ModeIsland.IsChecked = app.Settings.Mode == DisplayMode.Island;
+        ModeTray.IsChecked = app.Settings.Mode == DisplayMode.Tray;
+        AmPmSwitch.IsChecked = app.Settings.Use12h;
+        NotifySwitch.IsChecked = app.Settings.Notify;
+        StartupSwitch.IsChecked = Startup.Enabled;
+        loading = false;
+        ShowPanel(SettingsPanel);
+    }
+
+    public void ShowWelcome() => WelcomeBar.IsOpen = true;
+
+    void ShowPanel(FrameworkElement panel)
+    {
+        foreach (FrameworkElement p in new FrameworkElement[] { EmptyPanel, ResetPanel, SettingsPanel })
+            p.Visibility = p == panel ? Visibility.Visible : Visibility.Collapsed;
+        SettingsButton.Appearance = panel == SettingsPanel ? ControlAppearance.Secondary : ControlAppearance.Transparent;
+    }
+
+    void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (List.SelectedItem is not ResetView view)
+        {
+            if (current != null && SettingsPanel.Visibility != Visibility.Visible) ShowPanel(app.Resets.Count == 0 ? EmptyPanel : ResetPanel);
+            return;
+        }
+        current = view;
+        ResetPanel.DataContext = view;
+        loading = true;
+        NameBox.Text = view.Model.Name;
+        NameError.Visibility = Visibility.Collapsed;
+        DayBox.SelectedIndex = ((int)view.Model.Day + 6) % 7;
+        TimeBox.ApplyClockFormat();
+        TimeBox.Value = view.Model.Time;
+        SessionSwitch.IsChecked = view.Model.SessionHours > 0;
+        HoursBox.Value = view.Model.SessionHours > 0 ? view.Model.SessionHours : 5;
+        HoursBox.IsEnabled = view.Model.SessionHours > 0;
+        SessionTimeBox.ApplyClockFormat();
+        SessionTimeBox.Value = (view.Model.SessionEnd ?? DateTime.Now.AddHours(Math.Max(1, view.Model.SessionHours))).TimeOfDay;
+        loading = false;
+        ShowPanel(ResetPanel);
+    }
+
+    void Settings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+
+    // ---- editing an AI ----
+
+    void Add_Click(object sender, RoutedEventArgs e)
+    {
+        ResetView view = app.Add();
+        Select(view);
+        NameBox.Focus();
+        NameBox.SelectAll();
+    }
+
+    async void Remove_Click(object sender, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        ResetView view = current;
+        var confirm = new Wpf.Ui.Controls.MessageBox
+        {
+            Title = "Remove " + view.Name + "?",
+            Content = "Its countdown and any running session will be removed.",
+            PrimaryButtonText = "Remove",
+            CloseButtonText = "Cancel",
+        };
+        if (await confirm.ShowDialogAsync() != Wpf.Ui.Controls.MessageBoxResult.Primary) return;
+        int index = app.Resets.IndexOf(view);
+        app.Remove(view);
+        Select(app.Resets.Count == 0 ? null : app.Resets[Math.Min(index, app.Resets.Count - 1)]);
+    }
+
+    // Saved as you type, unless the name is empty or already used: sessions are saved by name.
+    void NameBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (loading || current == null) return;
+        string name = NameBox.Text.Trim();
+        string? problem = name.Length == 0 ? "Give it a name."
+            : app.NameTaken(name, current) ? "You already have an AI called " + name + "." : null;
+        NameError.Text = problem ?? "";
+        NameError.Visibility = problem == null ? Visibility.Collapsed : Visibility.Visible;
+        if (problem != null) return;
+        current.Model.Name = name;
+        app.Save();
+    }
+
+    void Day_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (loading || current == null || DayBox.SelectedIndex < 0) return;
+        current.Model.Day = (DayOfWeek)((DayBox.SelectedIndex + 1) % 7);
+        app.Save();
+    }
+
+    void Time_Changed(TimeSpan t)
+    {
+        if (loading || current == null) return;
+        current.Model.Time = t;
+        app.Save();
+    }
+
+    void Session_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (loading || current == null) return;
+        bool on = SessionSwitch.IsChecked == true;
+        HoursBox.IsEnabled = on;
+        current.Model.SessionHours = on ? (int)(HoursBox.Value ?? 5) : 0;
+        if (!on) current.Model.SessionEnd = null;
+        app.Save();
+    }
+
+    void Hours_Changed(object sender, RoutedEventArgs e)
+    {
+        if (loading || current == null || SessionSwitch.IsChecked != true || HoursBox.Value is not double h) return;
+        current.Model.SessionHours = (int)Math.Clamp(h, 1, 24);
+        app.Save();
+    }
+
+    void SetSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        DateTime now = DateTime.Now, end = now.Date.Add(SessionTimeBox.Value);
+        app.SetSessionEnd(current, end <= now ? end.AddDays(1) : end);
+    }
+
+    void EndSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (current != null) app.SetSessionEnd(current, null);
+    }
+
+    // ---- settings ----
+
+    void Mode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        app.SetMode(sender == ModeIsland ? DisplayMode.Island : sender == ModeTray ? DisplayMode.Tray : DisplayMode.Taskbar);
+    }
+
+    void AmPm_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        app.SetUse12h(AmPmSwitch.IsChecked == true);
+        TimeBox.ApplyClockFormat();
+        SessionTimeBox.ApplyClockFormat();
+    }
+
+    void Notify_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!loading) app.SetNotify(NotifySwitch.IsChecked == true);
+    }
+
+    void Startup_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        try { Startup.Enabled = StartupSwitch.IsChecked == true; }
+        catch (Exception) { loading = true; StartupSwitch.IsChecked = Startup.Enabled; loading = false; }
+    }
+
+    void OpenFolder_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo("explorer.exe", "\"" + Store.Dir + "\"") { UseShellExecute = true });
+}
