@@ -11,7 +11,8 @@ weekly limit of every AI tool you use, and rolling limits like Claude's 5-hour s
   passes over it, so it never blocks anything), or keep it all in the tray icon.
 - **Session windows too.** Click **Start** when you start chatting, or type in the reset time your AI shows
   you. Started one by mistake? **Undo** is right there.
-- **Notifies you** when a weekly limit or a session window resets.
+- **Notifies you** when a weekly limit or a session window resets, with a **Start new session** button right on
+  the notification. Optional reminders warn you before a reset, so you can use what's left first.
 - **Any AI,** each with its own reset day and time.
 - **Fits Windows 11:** follows your light or dark mode, with the translucent Mica background.
 
@@ -41,7 +42,7 @@ and tray. Click the tray icon, or run `Cooldown.exe` again, to open it.
 | Start a session window | Click **Start** on the card, or **Start now** in Cooldown |
 | Move the countdown along the taskbar | Drag it |
 | Choose taskbar, floating or tray only | **Settings** > **Show the countdown**, or right-click > **Show countdown** |
-| 12-hour time, notifications, Start with Windows | **Settings** |
+| 12-hour time, notifications, reminders, Start with Windows | **Settings** |
 | Quit | Right-click the tray icon > **Exit** |
 
 Every change is saved as you make it.
@@ -56,7 +57,16 @@ green when the reset is less than a day away, and starts over for the next week 
 Some limits are rolling windows that start when you start using the AI, such as Claude's 5-hour limit. Turn on
 **Also has a rolling limit** for that AI and set the hours. Then, when you start a session, either click
 **Start**, or type in the reset time your AI shows you and click **Set**. When the window ends you get a
-notification, and it goes back to "not started" until your next session.
+notification, and it goes back to "not started" until your next session. Click **Start new session** on that
+notification to start the next window straight away.
+
+### Notifications and reminders
+
+Cooldown uses Windows notifications, so they also show up in Notification Center. Click **Send a test** in
+**Settings** to see one. Under **Reminders** you can also be warned **before a weekly reset** (1 hour or 1 day
+before) and **before a session window ends** (15 minutes to 1 hour before): usage you haven't used by then
+doesn't carry over. With Windows' **Do not disturb** on, notifications go straight to Notification Center
+without popping up.
 
 ### The countdown in your taskbar
 
@@ -106,7 +116,10 @@ their exe and never change your **Start with Windows** entry.
 3. Delete the folder containing `Cooldown.exe`.
 
 Cooldown only writes `resets.txt`, `sessions.txt` and `settings.txt` next to the exe (or, if that folder is
-read-only, in `%APPDATA%\Cooldown`), and the **Start with Windows** entry, which step 1 removes.
+read-only, in `%APPDATA%\Cooldown`), and the **Start with Windows** entry, which step 1 removes. The first time
+it notifies you, Windows also records Cooldown as an app that sends notifications (its name and icon, so the
+buttons on a notification can start it). That's harmless to leave, and Windows lists it under
+**Settings > System > Notifications**.
 
 ## License
 

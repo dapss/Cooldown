@@ -17,6 +17,7 @@ public class AppController
 
     readonly DispatcherTimer timer = new(DispatcherPriority.Normal);
     TrayIcon tray = null!;
+    Notifier notifier = null!;
     IslandWindow island = null!;
     MainWindow? main;
     DateTime configStamp;
@@ -32,6 +33,7 @@ public class AppController
         Startup.RefreshPath();
         Load();
         tray = new TrayIcon(this);
+        notifier = new Notifier(this, tray.Notify);
         island = new IslandWindow(this);
         ApplyMode();
         timer.Tick += (_, _) => Tick();
@@ -120,17 +122,20 @@ public class AppController
             Reset r = v.Model;
             DateTime next = r.Next(now);
             if (r.LastNext != DateTime.MinValue && next > r.LastNext)
-                Notify(r.Name + " weekly limit has reset", "Next weekly reset: " + Format.When(next));
+                Notify(v, Possessive(r.Name) + " weekly limit has reset",
+                    "Your full weekly usage is back. Next reset: " + Format.When(next) + ".");
             r.LastNext = next;
 
             if (r.SessionEnd.HasValue && now >= r.SessionEnd.Value)
             {
                 // Skip stale news, such as a window that ended while the PC was off overnight.
                 if (now - r.SessionEnd.Value < TimeSpan.FromHours(1))
-                    Notify(r.Name + " " + r.SessionLabel + " has reset", "You can start a new session.");
+                    Notify(v, Possessive(r.Name) + " " + r.SessionLabel + " has reset",
+                        "Start a new session when you start chatting.", offerStart: true);
                 r.SessionEnd = null;
                 sessionsChanged = true;
             }
+            Remind(v, now, next);
             v.Refresh(now);
         }
         if (sessionsChanged) Store.SaveSessions(Resets.Select(v => v.Model));
@@ -142,9 +147,55 @@ public class AppController
         timer.Interval = TimeSpan.FromMilliseconds(1000 - DateTime.Now.Millisecond + 5);
     }
 
-    void Notify(string title, string text)
+    void Notify(ResetView about, string title, string text, bool offerStart = false)
     {
-        if (Settings.Notify) tray.Notify(title, text);
+        if (Settings.Notify) notifier.Show(title, text, about, offerStart);
+    }
+
+    // Reminders before a reset, if turned on in Settings. Each fires once, when the time left crosses
+    // the chosen lead time, so restarting Cooldown inside that time doesn't repeat it.
+    void Remind(ResetView v, DateTime now, DateTime next)
+    {
+        Reset r = v.Model;
+        TimeSpan weekLeft = next - now;
+        int lead = Settings.RemindWeekMinutes;
+        if (lead > 0 && r.WeekLeftBefore is { } wb && wb > TimeSpan.FromMinutes(lead) && weekLeft <= TimeSpan.FromMinutes(lead))
+            Notify(v, Possessive(r.Name) + " weekly limit resets in " + Lead(lead),
+                "It resets " + Format.When(next) + ". Anything you haven't used by then doesn't carry over.");
+        r.WeekLeftBefore = weekLeft;
+
+        TimeSpan? sessionLeft = r.SessionEnd.HasValue ? r.SessionEnd.Value - now : null;
+        lead = Settings.RemindSessionMinutes;
+        if (lead > 0 && sessionLeft is { } sl && r.SessionLeftBefore is { } sb
+            && sb > TimeSpan.FromMinutes(lead) && sl <= TimeSpan.FromMinutes(lead) && sl > TimeSpan.Zero)
+            Notify(v, Possessive(r.Name) + " " + r.SessionLabel + " ends in " + Lead(lead),
+                "It resets at " + Format.Clock(r.SessionEnd!.Value.TimeOfDay) + ". Anything left in this window doesn't carry over.");
+        r.SessionLeftBefore = sessionLeft;
+    }
+
+    static string Lead(int minutes) => minutes switch
+    {
+        1440 => "1 day",
+        60 => "1 hour",
+        _ when minutes % 60 == 0 => minutes / 60 + " hours",
+        _ => minutes + " minutes",
+    };
+
+    static string Possessive(string name) => name.EndsWith('s') ? name + "'" : name + "'s";
+
+    // From Settings: shows what a notification looks like, and checks that Windows lets them through.
+    public void SendTestNotification() =>
+        notifier.Show("Notifications are on", "This is how Cooldown tells you when a limit resets.", Resets.FirstOrDefault());
+
+#if DEBUG
+    public void SimulateToast(string arguments) => notifier.Simulate(arguments);
+#endif
+
+    public void SetReminders(int weekMinutes, int sessionMinutes)
+    {
+        Settings.RemindWeekMinutes = weekMinutes;
+        Settings.RemindSessionMinutes = sessionMinutes;
+        Settings.Save();
     }
 
     // ---- settings ----

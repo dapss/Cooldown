@@ -144,6 +144,8 @@ public class Settings
     static readonly string FilePath = Path.Combine(Store.Dir, "settings.txt");
     public DisplayMode Mode = DisplayMode.Taskbar;
     public bool Notify = true;
+    public int RemindWeekMinutes;                 // remind this long before a weekly reset; 0 = off
+    public int RemindSessionMinutes;              // remind this long before a session window ends; 0 = off
     public bool HoverOpen;                        // in the taskbar, open the card on hover too, not only on click
     public System.Windows.Rect? WindowBounds;     // the app window's last size and position, in WPF units
     public bool WindowMaximized;
@@ -172,6 +174,8 @@ public class Settings
                     case "ampm": s.Use12h = v == "1"; break;
                     case "notify": s.Notify = v == "1"; break;
                     case "hover": s.HoverOpen = v == "1"; break;
+                    case "remindweek": s.RemindWeekMinutes = int.Parse(v); break;
+                    case "remindsession": s.RemindSessionMinutes = int.Parse(v); break;
                     case "window":
                         string[] w = v.Split(',');
                         s.WindowBounds = new System.Windows.Rect(int.Parse(w[0]), int.Parse(w[1]), int.Parse(w[2]), int.Parse(w[3]));
@@ -192,7 +196,8 @@ public class Settings
     public void Save()
     {
         string mode = Mode switch { DisplayMode.Island => "island", DisplayMode.Tray => "tray", _ => "taskbar" };
-        var text = new StringBuilder($"mode={mode}\r\nampm={(Use12h ? 1 : 0)}\r\nnotify={(Notify ? 1 : 0)}\r\nhover={(HoverOpen ? 1 : 0)}\r\n");
+        var text = new StringBuilder($"mode={mode}\r\nampm={(Use12h ? 1 : 0)}\r\nnotify={(Notify ? 1 : 0)}\r\nhover={(HoverOpen ? 1 : 0)}\r\n" +
+            $"remindweek={RemindWeekMinutes}\r\nremindsession={RemindSessionMinutes}\r\n");
         if (IslandPosition is { } p) text.Append($"island={(int)p.X},{(int)p.Y}\r\n");
         if (TaskbarSpot >= 0) text.Append($"taskbar={TaskbarSpot}\r\n");
         if (WindowBounds is { } b)

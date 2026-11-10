@@ -36,6 +36,9 @@ public partial class App : Application
 
         var app = new AppController();
         app.Start();
+#if DEBUG
+        if (e.Args.Length == 2 && e.Args[0] == "--simulate-toast") app.SimulateToast(e.Args[1]);
+#endif
 
         // Running Cooldown again opens the window of the copy that's already running.
         var listener = new Thread(() =>

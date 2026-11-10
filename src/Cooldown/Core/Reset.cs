@@ -11,6 +11,7 @@ public class Reset
     public int SessionHours;      // rolling limit in hours; 0 = none
     public DateTime? SessionEnd;  // when the current session window resets; null = not started
     public DateTime LastNext;     // runtime only: lets the clock spot the moment a weekly reset passes
+    public TimeSpan? WeekLeftBefore, SessionLeftBefore;  // runtime only: time left at the last tick, for reminders
 
     public string SessionLabel => SessionHours + "-hour limit";
 

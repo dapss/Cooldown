@@ -282,10 +282,14 @@
                                 <ui:CardControl.Header>
                                     <StackPanel>
                                         <TextBlock Text="Notify me when a limit resets" FontWeight="SemiBold" />
-                                        <TextBlock Text="Both weekly resets and session windows" Style="{StaticResource Caption}" />
+                                        <TextBlock Text="Both weekly resets and session windows. A session's notification can start the next one." Style="{StaticResource Caption}" />
                                     </StackPanel>
                                 </ui:CardControl.Header>
-                                <ui:ToggleSwitch x:Name="NotifySwitch" AutomationProperties.Name="Notify me when a limit resets" Checked="Notify_Toggled" Unchecked="Notify_Toggled" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Content="Send a test" Click="TestNotify_Click" Margin="0,0,16,0"
+                                               AutomationProperties.Name="Send a test notification" />
+                                    <ui:ToggleSwitch x:Name="NotifySwitch" AutomationProperties.Name="Notify me when a limit resets" Checked="Notify_Toggled" Unchecked="Notify_Toggled" />
+                                </StackPanel>
                             </ui:CardControl>
                             <ui:CardControl Icon="{ui:SymbolIcon Power24}">
                                 <ui:CardControl.Header>
@@ -293,6 +297,39 @@
                                 </ui:CardControl.Header>
                                 <ui:ToggleSwitch x:Name="StartupSwitch" AutomationProperties.Name="Start with Windows" Checked="Startup_Toggled" Unchecked="Startup_Toggled" />
                             </ui:CardControl>
+
+                            <TextBlock Text="Reminders" Style="{StaticResource SectionTitle}" />
+                            <StackPanel x:Name="RemindersPanel">
+                                <ui:CardControl Icon="{ui:SymbolIcon CalendarClock24}" Margin="0,0,0,4">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="Before a weekly reset" FontWeight="SemiBold" />
+                                            <TextBlock Text="A last chance to use what's left of your week" Style="{StaticResource Caption}" />
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ComboBox x:Name="RemindWeekBox" MinWidth="170" SelectionChanged="Remind_Changed"
+                                              AutomationProperties.Name="Remind me before a weekly reset">
+                                        <ComboBoxItem Content="Off" Tag="0" />
+                                        <ComboBoxItem Content="1 hour before" Tag="60" />
+                                        <ComboBoxItem Content="1 day before" Tag="1440" />
+                                    </ComboBox>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon TimerOff24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="Before a session window ends" FontWeight="SemiBold" />
+                                            <TextBlock Text="A last chance to use what's left of the window" Style="{StaticResource Caption}" />
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ComboBox x:Name="RemindSessionBox" MinWidth="170" SelectionChanged="Remind_Changed"
+                                              AutomationProperties.Name="Remind me before a session window ends">
+                                        <ComboBoxItem Content="Off" Tag="0" />
+                                        <ComboBoxItem Content="15 minutes before" Tag="15" />
+                                        <ComboBoxItem Content="30 minutes before" Tag="30" />
+                                        <ComboBoxItem Content="1 hour before" Tag="60" />
+                                    </ComboBox>
+                                </ui:CardControl>
+                            </StackPanel>
 
                             <TextBlock Text="About" Style="{StaticResource SectionTitle}" />
                             <ui:CardControl Icon="{ui:SymbolIcon Folder24}">

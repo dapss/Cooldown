@@ -123,6 +123,9 @@ public partial class MainWindow : FluentWindow
         AmPmSwitch.IsChecked = app.Settings.Use12h;
         NotifySwitch.IsChecked = app.Settings.Notify;
         HoverSwitch.IsChecked = app.Settings.HoverOpen;
+        SelectByTag(RemindWeekBox, app.Settings.RemindWeekMinutes);
+        SelectByTag(RemindSessionBox, app.Settings.RemindSessionMinutes);
+        RemindersPanel.IsEnabled = app.Settings.Notify;
         StartupSwitch.IsChecked = Startup.Enabled;
         loading = false;
         ShowPanel(SettingsPanel);
@@ -270,7 +273,26 @@ public partial class MainWindow : FluentWindow
 
     void Notify_Toggled(object sender, RoutedEventArgs e)
     {
+        RemindersPanel.IsEnabled = NotifySwitch.IsChecked == true;  // reminders are notifications too
         if (!loading) app.SetNotify(NotifySwitch.IsChecked == true);
+    }
+
+    void TestNotify_Click(object sender, RoutedEventArgs e) => app.SendTestNotification();
+
+    void Remind_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (loading || RemindWeekBox.SelectedItem == null || RemindSessionBox.SelectedItem == null) return;
+        app.SetReminders(TagOf(RemindWeekBox), TagOf(RemindSessionBox));
+    }
+
+    static int TagOf(ComboBox box) => box.SelectedItem is ComboBoxItem { Tag: string t } ? int.Parse(t) : 0;
+
+    // Selects the choice for a saved value, or Off if the value isn't one of the choices.
+    static void SelectByTag(ComboBox box, int minutes)
+    {
+        box.SelectedIndex = 0;
+        foreach (ComboBoxItem item in box.Items)
+            if (item.Tag is string t && int.Parse(t) == minutes) box.SelectedItem = item;
     }
 
     void Startup_Toggled(object sender, RoutedEventArgs e)
