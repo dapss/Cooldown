@@ -265,6 +265,8 @@ public partial class IslandWindow : Window
             PillRing.Fill = count == Ink ? Green : count;
         }
         PillCount.Visibility = PillCount.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        System.Windows.Automation.AutomationProperties.SetName(PillPanel,
+            PillCount.Text.Length == 0 ? PillName.Text : PillName.Text + ", " + PillCount.Text + " left");
         PillPanel.Measure(new Size(double.PositiveInfinity, PillH));
         pillW = Math.Ceiling(PillPanel.DesiredSize.Width);
     }
@@ -345,10 +347,20 @@ public partial class IslandWindow : Window
         from = value;
         target = to;
         opening = open;
+        if (!Motion)
+        {
+            // Animation effects are off in Windows: switch straight to the new state.
+            value = target;
+            Layout();
+            return;
+        }
         animStart = Ms;
         animLength = open ? 420 : 260;
         if (!animating) { animating = true; CompositionTarget.Rendering += OnFrame; }
     }
+
+    // Windows' "Animation effects" setting (Settings > Accessibility > Visual effects).
+    static bool Motion => SystemParameters.ClientAreaAnimation;
 
     void OnFrame(object? sender, EventArgs e)
     {
@@ -418,12 +430,13 @@ public partial class IslandWindow : Window
 
         if (docked && target == 0 && !animating)
         {
-            // Nothing is under it here, so no fading: hover to open, or click.
+            // Nothing is under it here, so no fading. It opens on click, and on hover too if that's on in
+            // Settings: off by default, since the mouse often passes over it on the way to the tray.
             bool inside = ToScreen(PillRect()).Contains(cursor);
             if (inside != hoverPill) { hoverPill = inside; Layout(); }
             if (inside && !onPill) { onPill = true; restAt = c; restSince = now; }
             else if (!inside) onPill = noHoverOpen = false;
-            if (onPill && !dockDragging && !mouseDown && !noHoverOpen && !app.MenuOpen)
+            if (onPill && app.Settings.HoverOpen && !dockDragging && !mouseDown && !noHoverOpen && !app.MenuOpen)
             {
                 if (Math.Abs(c.X - restAt.X) > 4 * scale || Math.Abs(c.Y - restAt.Y) > 4 * scale) { restAt = c; restSince = now; }
                 if (now - restSince >= DockedOpenAfterMs) { onPill = hoverPill = false; offCardSince = -1; Animate(true); return; }
@@ -474,7 +487,7 @@ public partial class IslandWindow : Window
         }
 
         // Ease the fade toward its target.
-        ghost = Math.Abs(ghostTarget - ghost) > 0.01 ? ghost + (ghostTarget - ghost) * 0.4 : ghostTarget;
+        ghost = Motion && Math.Abs(ghostTarget - ghost) > 0.01 ? ghost + (ghostTarget - ghost) * 0.4 : ghostTarget;
         Apply();
 
         double interval = onPill || target == 1 || ghost != ghostTarget ? 30 : 150;

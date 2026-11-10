@@ -38,6 +38,14 @@
         <Style x:Key="NavItem" TargetType="ListBoxItem">
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="AutomationProperties.Name">
+                <Setter.Value>
+                    <MultiBinding StringFormat="{}{0}, resets in {1}">
+                        <Binding Path="Name" />
+                        <Binding Path="Countdown" />
+                    </MultiBinding>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -108,7 +116,7 @@
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Your AIs" Style="{StaticResource Caption}" Margin="10,4,0,6" />
                 <ListBox x:Name="List" ItemsSource="{Binding Resets}" ItemTemplate="{StaticResource ResetListItem}" ItemContainerStyle="{StaticResource NavItem}"
-                         SelectionChanged="List_SelectionChanged" BorderThickness="0" Background="Transparent"
+                         SelectionChanged="List_SelectionChanged" BorderThickness="0" AutomationProperties.Name="Your AIs" Background="Transparent"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
             </DockPanel>
 
@@ -132,7 +140,7 @@
                             <ui:InfoBar x:Name="WelcomeBar" Title="Welcome to Cooldown" IsOpen="False" Severity="Informational" Margin="0,0,0,16"
                                         Message="Set the day and time your AI's weekly limit resets. You'll find the countdown in your taskbar, next to the clock." />
 
-                            <ui:TextBox x:Name="NameBox" FontSize="24" FontWeight="SemiBold" PlaceholderText="Name, like Claude"
+                            <ui:TextBox x:Name="NameBox" AutomationProperties.Name="Name" FontSize="24" FontWeight="SemiBold" PlaceholderText="Name, like Claude"
                                         TextChanged="NameBox_TextChanged" />
                             <TextBlock x:Name="NameError" Foreground="{DynamicResource SystemFillColorCriticalBrush}" FontSize="12"
                                        Margin="2,6,0,0" Visibility="Collapsed" />
@@ -161,8 +169,8 @@
                                         <TextBlock Text="Every week on" FontWeight="SemiBold" />
                                         <TextBlock Text="At this time in your own time zone" Style="{StaticResource Caption}" />
                                         <WrapPanel Margin="0,12,0,0">
-                                            <ComboBox x:Name="DayBox" MinWidth="140" SelectionChanged="Day_Changed" Margin="0,0,12,6" />
-                                            <local:TimeInput x:Name="TimeBox" Margin="0,0,0,6" />
+                                            <ComboBox x:Name="DayBox" AutomationProperties.Name="Weekly reset day" MinWidth="140" SelectionChanged="Day_Changed" Margin="0,0,12,6" />
+                                            <local:TimeInput x:Name="TimeBox" Label="Weekly reset time" Margin="0,0,0,6" />
                                         </WrapPanel>
                                     </StackPanel>
                                 </Grid>
@@ -177,10 +185,10 @@
                                     </StackPanel>
                                 </ui:CardControl.Header>
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:NumberBox x:Name="HoursBox" Minimum="1" Maximum="24" MaxDecimalPlaces="0" Width="110" Margin="0,0,8,0"
+                                    <ui:NumberBox x:Name="HoursBox" AutomationProperties.Name="Session limit, in hours" Minimum="1" Maximum="24" MaxDecimalPlaces="0" Width="110" Margin="0,0,8,0"
                                                   SpinButtonPlacementMode="Inline" ValueChanged="Hours_Changed" />
                                     <TextBlock Text="hours" VerticalAlignment="Center" Margin="0,0,16,0" />
-                                    <ui:ToggleSwitch x:Name="SessionSwitch" Checked="Session_Toggled" Unchecked="Session_Toggled" />
+                                    <ui:ToggleSwitch x:Name="SessionSwitch" AutomationProperties.Name="Also has a rolling limit" Checked="Session_Toggled" Unchecked="Session_Toggled" />
                                 </StackPanel>
                             </ui:CardControl>
 
@@ -210,11 +218,12 @@
                                     </DockPanel>
                                     <!-- Set the time the AI shows -->
                                     <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,16,0,14" />
-                                    <DockPanel LastChildFill="False">
-                                        <TextBlock Text="Or set when it resets, as your AI shows it" Style="{StaticResource Caption}" VerticalAlignment="Center" />
-                                        <ui:Button DockPanel.Dock="Right" Content="Set" Click="SetSession_Click" Margin="8,0,0,0" />
-                                        <local:TimeInput x:Name="SessionTimeBox" DockPanel.Dock="Right" />
-                                    </DockPanel>
+                                    <TextBlock Text="Or set when it resets, as your AI shows it" FontWeight="SemiBold" />
+                                    <TextBlock Text="Use this if you started chatting before you clicked Start" Style="{StaticResource Caption}" />
+                                    <WrapPanel Margin="0,10,0,0">
+                                        <local:TimeInput x:Name="SessionTimeBox" Label="Session resets at" Margin="0,0,10,0" />
+                                        <ui:Button Content="Set reset time" Click="SetSession_Click" AutomationProperties.Name="Set the session's reset time" />
+                                    </WrapPanel>
                                 </StackPanel>
                             </ui:Card>
 
@@ -230,19 +239,19 @@
                             <TextBlock Text="Show the countdown" Style="{StaticResource SectionTitle}" />
                             <ui:Card Padding="16,10">
                                 <StackPanel>
-                                    <RadioButton x:Name="ModeTaskbar" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
+                                    <RadioButton x:Name="ModeTaskbar" AutomationProperties.Name="Show the countdown in the taskbar" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
                                         <StackPanel>
                                             <TextBlock Text="In the taskbar" FontWeight="SemiBold" />
-                                            <TextBlock Text="Next to the clock, so it never covers anything. Hover to see every countdown." Style="{StaticResource Caption}" />
+                                            <TextBlock Text="Next to the clock, so it never covers anything. Click it to see every countdown." Style="{StaticResource Caption}" />
                                         </StackPanel>
                                     </RadioButton>
-                                    <RadioButton x:Name="ModeIsland" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
+                                    <RadioButton x:Name="ModeIsland" AutomationProperties.Name="Show the countdown as a floating island" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
                                         <StackPanel>
                                             <TextBlock Text="Floating island" FontWeight="SemiBold" />
                                             <TextBlock Text="A small pill you can drag anywhere. It fades away when your mouse passes over it." Style="{StaticResource Caption}" />
                                         </StackPanel>
                                     </RadioButton>
-                                    <RadioButton x:Name="ModeTray" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
+                                    <RadioButton x:Name="ModeTray" AutomationProperties.Name="Show the countdown in the tray icon only" GroupName="Mode" Margin="0,4" Checked="Mode_Checked">
                                         <StackPanel>
                                             <TextBlock Text="Tray icon only" FontWeight="SemiBold" />
                                             <TextBlock Text="Right-click the tray icon to see your countdowns." Style="{StaticResource Caption}" />
@@ -251,12 +260,23 @@
                                 </StackPanel>
                             </ui:Card>
 
+                            <ui:CardControl Icon="{ui:SymbolIcon CursorHover24}" Margin="0,4,0,0">
+                                <ui:CardControl.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="Open on hover in the taskbar" FontWeight="SemiBold" />
+                                        <TextBlock Text="Otherwise, click the countdown to open it. The floating island always opens when you rest the mouse on it." Style="{StaticResource Caption}" />
+                                    </StackPanel>
+                                </ui:CardControl.Header>
+                                <ui:ToggleSwitch x:Name="HoverSwitch" Checked="Hover_Toggled" Unchecked="Hover_Toggled"
+                                                 AutomationProperties.Name="Open on hover in the taskbar" />
+                            </ui:CardControl>
+
                             <TextBlock Text="General" Style="{StaticResource SectionTitle}" />
                             <ui:CardControl Icon="{ui:SymbolIcon Clock24}" Margin="0,0,0,4">
                                 <ui:CardControl.Header>
                                     <TextBlock Text="12-hour time (AM/PM)" FontWeight="SemiBold" />
                                 </ui:CardControl.Header>
-                                <ui:ToggleSwitch x:Name="AmPmSwitch" Checked="AmPm_Toggled" Unchecked="AmPm_Toggled" />
+                                <ui:ToggleSwitch x:Name="AmPmSwitch" AutomationProperties.Name="12-hour time (AM/PM)" Checked="AmPm_Toggled" Unchecked="AmPm_Toggled" />
                             </ui:CardControl>
                             <ui:CardControl Icon="{ui:SymbolIcon Alert24}" Margin="0,0,0,4">
                                 <ui:CardControl.Header>
@@ -265,13 +285,13 @@
                                         <TextBlock Text="Both weekly resets and session windows" Style="{StaticResource Caption}" />
                                     </StackPanel>
                                 </ui:CardControl.Header>
-                                <ui:ToggleSwitch x:Name="NotifySwitch" Checked="Notify_Toggled" Unchecked="Notify_Toggled" />
+                                <ui:ToggleSwitch x:Name="NotifySwitch" AutomationProperties.Name="Notify me when a limit resets" Checked="Notify_Toggled" Unchecked="Notify_Toggled" />
                             </ui:CardControl>
                             <ui:CardControl Icon="{ui:SymbolIcon Power24}">
                                 <ui:CardControl.Header>
                                     <TextBlock Text="Start with Windows" FontWeight="SemiBold" />
                                 </ui:CardControl.Header>
-                                <ui:ToggleSwitch x:Name="StartupSwitch" Checked="Startup_Toggled" Unchecked="Startup_Toggled" />
+                                <ui:ToggleSwitch x:Name="StartupSwitch" AutomationProperties.Name="Start with Windows" Checked="Startup_Toggled" Unchecked="Startup_Toggled" />
                             </ui:CardControl>
 
                             <TextBlock Text="About" Style="{StaticResource SectionTitle}" />

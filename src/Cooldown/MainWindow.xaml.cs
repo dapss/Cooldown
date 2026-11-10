@@ -26,11 +26,82 @@ public partial class MainWindow : FluentWindow
         SessionTimeBox.Value = DateTime.Now.AddHours(5).TimeOfDay;
         DataPath.Text = Store.Dir;
         VersionText.Text = "Cooldown " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) + "  ·  MIT license";
-        Loaded += (_, _) => SystemThemeWatcher.Watch(this, WindowBackdropType.Mica, true);
+        // updateAccents: false, so Windows' accent color doesn't replace Cooldown's mint.
+        Loaded += (_, _) => SystemThemeWatcher.Watch(this, WindowBackdropType.Mica, updateAccents: false);
         app.Resets.CollectionChanged += (_, _) => { if (current != null && !app.Resets.Contains(current)) Select(app.Resets.FirstOrDefault()); };
 
         if (app.Resets.Count > 0) Select(app.Resets[0]);
         else ShowPanel(EmptyPanel);
+        RestoreBounds_();
+        Loaded += (_, _) => NameLibraryParts();
+        StateChanged += (_, _) => NameLibraryParts();  // Maximize becomes Restore
+    }
+
+    // Some buttons inside WPF-UI's controls have no name for screen readers (the title bar's) or are
+    // named after their icon ("CaretUp24"). Their template parts have predictable names, so name them.
+    void NameLibraryParts()
+    {
+        foreach (DependencyObject part in Descendants(this))
+        {
+            // Scrollbar arrows and tracks are named after their icons, or not at all.
+            if (part is System.Windows.Controls.Primitives.RepeatButton scroll)
+            {
+                string? what = scroll.Command == System.Windows.Controls.Primitives.ScrollBar.LineUpCommand ? "Scroll up"
+                    : scroll.Command == System.Windows.Controls.Primitives.ScrollBar.LineDownCommand ? "Scroll down"
+                    : scroll.Command == System.Windows.Controls.Primitives.ScrollBar.PageUpCommand ? "Page up"
+                    : scroll.Command == System.Windows.Controls.Primitives.ScrollBar.PageDownCommand ? "Page down" : null;
+                if (what != null) { System.Windows.Automation.AutomationProperties.SetName(scroll, what); continue; }
+            }
+            if (part is not FrameworkElement el || el.Name.Length == 0) continue;
+            string owner = el.TemplatedParent is FrameworkElement t ? System.Windows.Automation.AutomationProperties.GetName(t) : "";
+            string? name = el.Name switch
+            {
+                "PART_MinimizeButton" => "Minimize",
+                "PART_MaximizeButton" => WindowState == WindowState.Maximized ? "Restore" : "Maximize",
+                "PART_CloseButton" => "Close",
+                "PART_InlineIncrementButton" or "PART_CompactIncrementButton" => "Increase " + owner,
+                "PART_InlineDecrementButton" or "PART_CompactDecrementButton" => "Decrease " + owner,
+                "PART_ClearButton" => "Clear " + owner,
+                _ => null,
+            };
+            if (name != null) System.Windows.Automation.AutomationProperties.SetName(el, name.Trim());
+        }
+    }
+
+    static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            yield return child;
+            foreach (DependencyObject d in Descendants(child)) yield return d;
+        }
+    }
+
+    // ---- size and position ----
+
+    // Reopens where it was last closed, unless that spot is now off-screen (a monitor unplugged).
+    void RestoreBounds_()
+    {
+        if (app.Settings.WindowBounds is not { } b) return;
+        var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+        var titleBar = new Rect(b.X + 40, b.Y, Math.Max(1, b.Width - 80), 32);  // enough of it to drag back
+        if (!screen.IntersectsWith(titleBar)) return;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = b.X;
+        Top = b.Y;
+        Width = Math.Max(MinWidth, b.Width);
+        Height = Math.Max(MinHeight, b.Height);
+        if (app.Settings.WindowMaximized) Loaded += (_, _) => WindowState = WindowState.Maximized;
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        Rect b = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+        if (!b.IsEmpty) app.SaveWindow(b, WindowState == WindowState.Maximized);
     }
 
     // ---- navigation ----
@@ -51,6 +122,7 @@ public partial class MainWindow : FluentWindow
         ModeTray.IsChecked = app.Settings.Mode == DisplayMode.Tray;
         AmPmSwitch.IsChecked = app.Settings.Use12h;
         NotifySwitch.IsChecked = app.Settings.Notify;
+        HoverSwitch.IsChecked = app.Settings.HoverOpen;
         StartupSwitch.IsChecked = Startup.Enabled;
         loading = false;
         ShowPanel(SettingsPanel);
@@ -189,6 +261,11 @@ public partial class MainWindow : FluentWindow
         app.SetUse12h(AmPmSwitch.IsChecked == true);
         TimeBox.ApplyClockFormat();
         SessionTimeBox.ApplyClockFormat();
+    }
+
+    void Hover_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!loading) app.SetHoverOpen(HoverSwitch.IsChecked == true);
     }
 
     void Notify_Toggled(object sender, RoutedEventArgs e)

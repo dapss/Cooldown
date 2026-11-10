@@ -73,6 +73,20 @@ public class TimeInput : StackPanel
 
     public event Action<TimeSpan>? ValueChanged;
 
+    // Read out by screen readers: "<Label> hour", "<Label> minute", "<Label> AM or PM".
+    public string Label
+    {
+        get => label;
+        set
+        {
+            label = value;
+            System.Windows.Automation.AutomationProperties.SetName(hour, value + " hour");
+            System.Windows.Automation.AutomationProperties.SetName(minute, value + " minute");
+            System.Windows.Automation.AutomationProperties.SetName(ampm, value + " AM or PM");
+        }
+    }
+    string label = "Time";
+
     public TimeInput()
     {
         Orientation = Orientation.Horizontal;

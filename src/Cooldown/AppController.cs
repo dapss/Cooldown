@@ -171,6 +171,19 @@ public class AppController
         Tick();
     }
 
+    public void SaveWindow(Rect bounds, bool maximized)
+    {
+        Settings.WindowBounds = bounds;
+        Settings.WindowMaximized = maximized;
+        Settings.Save();
+    }
+
+    public void SetHoverOpen(bool on)
+    {
+        Settings.HoverOpen = on;
+        Settings.Save();
+    }
+
     public void SetNotify(bool on)
     {
         Settings.Notify = on;
@@ -218,7 +231,28 @@ public class AppController
             SystemTheme.Light or SystemTheme.Flow or SystemTheme.Sunrise => ApplicationTheme.Light,
             _ => ApplicationTheme.Dark,
         };
-        ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.Mica, true);
+        if (!brandHooked)
+        {
+            // Keep the brand color when Windows switches between light and dark mode.
+            brandHooked = true;
+            ApplicationThemeManager.Changed += (changed, _) => ApplyBrandAccent(changed);
+        }
+        ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.Mica, updateAccent: false);
+        ApplyBrandAccent(theme);
+    }
+
+    static bool brandHooked;
+
+    // Cooldown's own mint and teal, from its icon, instead of the Windows accent color. Lighter shades
+    // on dark backgrounds and deeper ones on light, so text on accent buttons stays readable.
+    static void ApplyBrandAccent(ApplicationTheme theme)
+    {
+        static System.Windows.Media.Color C(uint rgb) =>
+            System.Windows.Media.Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+        if (theme == ApplicationTheme.Light)
+            ApplicationAccentColorManager.Apply(C(0x1FA588), C(0x178C73), C(0x10735E), C(0x0A5A49));
+        else
+            ApplicationAccentColorManager.Apply(C(0x3FBF9C), C(0x5FD3B0), C(0x7FE0C2), C(0xA3ECD6));
     }
 
     public void Exit()

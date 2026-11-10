@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Cooldown"
-        Title="Cooldown" AllowsTransparency="True" WindowStyle="None" Background="Transparent"
+        Title="Cooldown" AutomationProperties.Name="Cooldown countdown" AllowsTransparency="True" WindowStyle="None" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ShowActivated="False" ResizeMode="NoResize"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
         FontFamily="Segoe UI Variable Text, Segoe UI">
@@ -113,7 +113,14 @@
 
                 <!-- A running session: click it to change it in the app -->
                 <Button Style="{StaticResource Ghost}" Command="{Binding OpenCommand}" Margin="-8,8,-8,-4" Padding="8,6,8,6"
+                        AutomationProperties.HelpText="Opens it in Cooldown"
                         Visibility="{Binding SessionRunning, Converter={StaticResource Visible}}">
+                    <AutomationProperties.Name>
+                        <MultiBinding StringFormat="{}{0}, {1} left">
+                            <Binding Path="SessionLabel" />
+                            <Binding Path="SessionCountdown" />
+                        </MultiBinding>
+                    </AutomationProperties.Name>
                     <StackPanel>
                         <Grid>
                             <TextBlock Text="{Binding SessionLabel}" Style="{StaticResource Small}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
@@ -122,7 +129,7 @@
                         <local:Bar Fraction="{Binding SessionProgress}" Fill="{StaticResource Orange}" Track="{StaticResource Track}" Margin="0,8,0,0" />
                         <Grid Margin="0,6,0,0" MinHeight="26">
                             <TextBlock Text="{Binding SessionResetText}" Style="{StaticResource Small}" VerticalAlignment="Center" Margin="0,0,70,0" />
-                            <Button Content="Undo" Style="{StaticResource UndoPill}" Command="{Binding UndoCommand}" HorizontalAlignment="Right"
+                            <Button Content="Undo" AutomationProperties.Name="Undo start" Style="{StaticResource UndoPill}" Command="{Binding UndoCommand}" HorizontalAlignment="Right"
                                     Visibility="{Binding ShowUndo, Converter={StaticResource Visible}}" />
                         </Grid>
                     </StackPanel>
@@ -133,7 +140,8 @@
                     <TextBlock Style="{StaticResource Small}" VerticalAlignment="Center" Margin="0,0,80,0">
                         <Run Text="{Binding SessionLabel, Mode=OneWay}" /><Run Text=" not started" />
                     </TextBlock>
-                    <Button Content="Start" Style="{StaticResource Pill}" Command="{Binding StartCommand}" HorizontalAlignment="Right" />
+                    <Button Content="Start" Style="{StaticResource Pill}" Command="{Binding StartCommand}"
+                            AutomationProperties.Name="{Binding SessionLabel, StringFormat=Start the {0}}" HorizontalAlignment="Right" />
                 </Grid>
             </StackPanel>
         </DataTemplate>
@@ -160,7 +168,8 @@
                     <Border Height="1" Background="{StaticResource Track}" Margin="18,0" />
                     <Grid Margin="10,6,10,8">
                         <Button Style="{StaticResource Ghost}" Click="Edit_Click" HorizontalAlignment="Left" Content="Open Cooldown" />
-                        <Button Style="{StaticResource Ghost}" Click="More_Click" HorizontalAlignment="Right" Padding="10,5" ToolTip="More">
+                        <Button Style="{StaticResource Ghost}" Click="More_Click" HorizontalAlignment="Right" Padding="10,5" ToolTip="More"
+                                AutomationProperties.Name="More options">
                             <TextBlock Text="•••" FontSize="10" />
                         </Button>
                     </Grid>

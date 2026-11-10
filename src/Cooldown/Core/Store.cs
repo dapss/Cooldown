@@ -144,6 +144,9 @@ public class Settings
     static readonly string FilePath = Path.Combine(Store.Dir, "settings.txt");
     public DisplayMode Mode = DisplayMode.Taskbar;
     public bool Notify = true;
+    public bool HoverOpen;                        // in the taskbar, open the card on hover too, not only on click
+    public System.Windows.Rect? WindowBounds;     // the app window's last size and position, in WPF units
+    public bool WindowMaximized;
     public bool Use12h = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern.Contains('t');  // follow Windows until set
     public System.Windows.Point? IslandPosition;  // floating: the pill's top-center, in screen pixels
     public int TaskbarSpot = -1;                  // the pill's center in the taskbar, in pixels from its right end
@@ -168,6 +171,12 @@ public class Settings
                     case "widget": if (!sawMode) s.Mode = v == "1" ? DisplayMode.Island : DisplayMode.Tray; break;
                     case "ampm": s.Use12h = v == "1"; break;
                     case "notify": s.Notify = v == "1"; break;
+                    case "hover": s.HoverOpen = v == "1"; break;
+                    case "window":
+                        string[] w = v.Split(',');
+                        s.WindowBounds = new System.Windows.Rect(int.Parse(w[0]), int.Parse(w[1]), int.Parse(w[2]), int.Parse(w[3]));
+                        s.WindowMaximized = w.Length > 4 && w[4] == "max";
+                        break;
                     case "island":
                         string[] xy = v.Split(',');
                         s.IslandPosition = new System.Windows.Point(int.Parse(xy[0]), int.Parse(xy[1]));
@@ -183,9 +192,11 @@ public class Settings
     public void Save()
     {
         string mode = Mode switch { DisplayMode.Island => "island", DisplayMode.Tray => "tray", _ => "taskbar" };
-        var text = new StringBuilder($"mode={mode}\r\nampm={(Use12h ? 1 : 0)}\r\nnotify={(Notify ? 1 : 0)}\r\n");
+        var text = new StringBuilder($"mode={mode}\r\nampm={(Use12h ? 1 : 0)}\r\nnotify={(Notify ? 1 : 0)}\r\nhover={(HoverOpen ? 1 : 0)}\r\n");
         if (IslandPosition is { } p) text.Append($"island={(int)p.X},{(int)p.Y}\r\n");
         if (TaskbarSpot >= 0) text.Append($"taskbar={TaskbarSpot}\r\n");
+        if (WindowBounds is { } b)
+            text.Append($"window={(int)b.X},{(int)b.Y},{(int)b.Width},{(int)b.Height}{(WindowMaximized ? ",max" : "")}\r\n");
         try { File.WriteAllText(FilePath, text.ToString()); } catch (Exception) { }
     }
 }
