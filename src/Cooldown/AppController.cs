@@ -41,6 +41,7 @@ public class AppController
         timer.Start();
         Tick();
         if (Store.FirstRun) OpenMain(Resets.FirstOrDefault(), firstRun: true);
+        TrimLater();
     }
 
     void Load()
@@ -264,7 +265,7 @@ public class AppController
         {
             ApplySystemTheme();
             main = new MainWindow(this);
-            main.Closed += (_, _) => main = null;
+            main.Closed += (_, _) => { main = null; TrimLater(); };
             main.Show();
         }
         if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
@@ -275,8 +276,25 @@ public class AppController
         if (firstRun) main.ShowWelcome();
     }
 
+    // A few seconds after starting, and after the window closes, hand memory Cooldown isn't using back
+    // to Windows. Most of it was only needed to start up or to show the window; anything needed
+    // again is simply read back in. This mainly lowers the number Task Manager shows for Cooldown.
+    public static void TrimLater()
+    {
+        var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        t.Tick += (_, _) =>
+        {
+            t.Stop();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Native.SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1);
+        };
+        t.Start();
+    }
+
     public static void ApplySystemTheme()
     {
+        App.EnsureFluentResources();
         ApplicationTheme theme = ApplicationThemeManager.GetSystemTheme() switch
         {
             SystemTheme.Light or SystemTheme.Flow or SystemTheme.Sunrise => ApplicationTheme.Light,

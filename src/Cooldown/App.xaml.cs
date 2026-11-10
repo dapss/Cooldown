@@ -34,6 +34,10 @@ public partial class App : Application
             return;
         }
 
+        // Draw on the CPU, not the GPU. Cooldown's windows are small and mostly still, and using the GPU
+        // loads the graphics driver into the app: about 75 MB of memory, against little CPU for drawing.
+        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
         var app = new AppController();
         app.Start();
 #if DEBUG
@@ -47,5 +51,18 @@ public partial class App : Application
                 Dispatcher.BeginInvoke(() => app.OpenMain());
         }) { IsBackground = true };
         listener.Start();
+    }
+
+    static bool fluentLoaded;
+
+    // WPF-UI's theme and control styles, for the window and the menu. The island doesn't use them, so
+    // they load the first time the window or the menu opens, not at startup.
+    public static void EnsureFluentResources()
+    {
+        if (fluentLoaded) return;
+        fluentLoaded = true;
+        var merged = Current.Resources.MergedDictionaries;
+        merged.Add(new Wpf.Ui.Markup.ThemesDictionary { Theme = Wpf.Ui.Appearance.ApplicationTheme.Dark });
+        merged.Add(new Wpf.Ui.Markup.ControlsDictionary());
     }
 }

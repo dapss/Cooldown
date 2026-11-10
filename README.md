@@ -14,6 +14,7 @@ weekly limit of every AI tool you use, and rolling limits like Claude's 5-hour s
 - **Notifies you** when a weekly limit or a session window resets, with a **Start new session** button right on
   the notification. Optional reminders warn you before a reset, so you can use what's left first.
 - **Any AI,** each with its own reset day and time.
+- **Light on your PC:** about 10 to 15 MB in Task Manager while it sits in your taskbar.
 - **Fits Windows 11:** follows your light or dark mode, with the translucent Mica background.
 
 Cooldown used to be called **Reset Timer**. It keeps your resets and settings when you switch.
