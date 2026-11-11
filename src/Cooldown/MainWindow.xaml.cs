@@ -203,7 +203,7 @@ public partial class MainWindow : FluentWindow
         NameError.Text = problem ?? "";
         NameError.Visibility = problem == null ? Visibility.Collapsed : Visibility.Visible;
         if (problem != null) return;
-        current.Model.Name = name;
+        current.Model.Name = Store.CleanName(name);  // as it's saved, so the list and the file agree
         app.Save();
     }
 
@@ -211,14 +211,14 @@ public partial class MainWindow : FluentWindow
     {
         if (loading || current == null || DayBox.SelectedIndex < 0) return;
         current.Model.Day = (DayOfWeek)((DayBox.SelectedIndex + 1) % 7);
-        app.Save();
+        app.ScheduleChanged(current);
     }
 
     void Time_Changed(TimeSpan t)
     {
         if (loading || current == null) return;
         current.Model.Time = t;
-        app.Save();
+        app.ScheduleChanged(current);
     }
 
     void Session_Toggled(object sender, RoutedEventArgs e)

@@ -74,12 +74,30 @@ public class AppController
         Save();
     }
 
+    // For a changed reset day or time. The clock spots a reset by the next one moving later, and so
+    // does moving the schedule later: forget what it remembered, so the edit isn't announced as a reset.
+    public void ScheduleChanged(ResetView view)
+    {
+        view.Model.LastNext = default;
+        view.Model.WeekLeftBefore = null;
+        Save();
+    }
+
     // Writes both files; sessions first, so a renamed reset keeps its running session.
     public void Save()
     {
         Store.SaveSessions(Resets.Select(v => v.Model));
-        Store.SaveResets(Resets.Select(v => v.Model));
-        configStamp = File.GetLastWriteTimeUtc(Store.ResetsPath);
+        try
+        {
+            Store.SaveResets(Resets.Select(v => v.Model));
+            configStamp = File.GetLastWriteTimeUtc(Store.ResetsPath);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // resets.txt is locked, by an editor or a sync tool: the change stays in memory, and the
+            // next save writes it.
+            Store.Log("Saving resets.txt", e);
+        }
         Tick();
     }
 

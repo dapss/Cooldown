@@ -38,6 +38,14 @@ public partial class App : Application
         // loads the graphics driver into the app: about 75 MB of memory, against little CPU for drawing.
         System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
+        // Cooldown runs for weeks at a time: one unexpected error is noted in cooldown.log, not a
+        // reason to vanish from the taskbar.
+        DispatcherUnhandledException += (_, error) =>
+        {
+            Core.Store.Log("Unexpected error", error.Exception);
+            error.Handled = true;
+        };
+
         var app = new AppController();
         app.Start();
 #if DEBUG

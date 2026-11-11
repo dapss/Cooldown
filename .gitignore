@@ -2,5 +2,7 @@
 resets.txt
 settings.txt
 sessions.txt
+cooldown.log
+*.tmp
 bin/
 obj/

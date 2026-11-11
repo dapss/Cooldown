@@ -22,10 +22,12 @@ public static class Store
 
     public static List<Reset> LoadResets(List<string> errors)
     {
-        if (!File.Exists(ResetsPath) || new FileInfo(ResetsPath).Length == 0)
+        // Only when the file is missing. An empty one is left alone: it may be an editor mid-save, and
+        // writing the example over it would replace the user's list.
+        if (!File.Exists(ResetsPath))
         {
             FirstRun = true;
-            File.WriteAllText(ResetsPath, Header + "\r\nClaude | Sunday | 16:00 | 5h\r\n");
+            WriteAtomic(ResetsPath, Header + "\r\nClaude | Sunday | 16:00 | 5h\r\n");
         }
         var list = new List<Reset>();
         foreach (string raw in File.ReadAllLines(ResetsPath))
@@ -58,7 +60,29 @@ public static class Store
             if (r.SessionHours > 0) sb.Append($" | {r.SessionHours}h");
             sb.Append("\r\n");
         }
-        File.WriteAllText(ResetsPath, sb.ToString());
+        WriteAtomic(ResetsPath, sb.ToString());
+    }
+
+    // Written to a temporary file that then replaces the real one, so a crash or power cut mid-save
+    // can't leave a half-written or empty file behind.
+    public static void WriteAtomic(string path, string text)
+    {
+        string temp = path + ".tmp";
+        File.WriteAllText(temp, text);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    // Unexpected errors go to cooldown.log next to the data files. Capped, so an error that repeats
+    // every second can't fill the disk.
+    public static void Log(string what, Exception e)
+    {
+        try
+        {
+            string path = Path.Combine(Dir, "cooldown.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024) return;
+            File.AppendAllText(path, $"{DateTime.Now.ToString(StampFormat, CultureInfo.InvariantCulture)} {what}: {e}\r\n\r\n");
+        }
+        catch (Exception) { }
     }
 
     static void LoadSessions(List<Reset> resets)
@@ -85,7 +109,7 @@ public static class Store
         foreach (Reset r in resets)
             if (r.SessionHours > 0 && r.SessionEnd.HasValue)
                 sb.Append($"{CleanName(r.Name)} | {r.SessionEnd.Value.ToString(StampFormat, CultureInfo.InvariantCulture)}\r\n");
-        try { File.WriteAllText(SessionsPath, sb.ToString()); } catch (Exception) { }
+        try { WriteAtomic(SessionsPath, sb.ToString()); } catch (Exception) { }
     }
 
     // Next to the exe when that folder is writable, so the app stays portable. Otherwise, such as in
@@ -93,7 +117,7 @@ public static class Store
     static string FindDataFolder()
     {
         string local = AppContext.BaseDirectory;
-        if (CanWrite(Path.Combine(local, "resets.txt"))) return local;
+        if (CanWrite(local)) return local;
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         string folder = Path.Combine(appData, "Cooldown"), old = Path.Combine(appData, "ResetTimer");
         try
@@ -106,19 +130,22 @@ public static class Store
         return folder;
     }
 
-    static bool CanWrite(string path)
+    // Tries a throwaway file, not resets.txt itself: that would leave an empty resets.txt behind.
+    static bool CanWrite(string folder)
     {
         try
         {
-            using (new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite)) { }
+            string probe = Path.Combine(folder, "cooldown-" + Guid.NewGuid().ToString("N") + ".tmp");
+            using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
             return true;
         }
         catch (Exception) { return false; }
     }
 
+    // A name as it can be stored: "|" separates the fields, and a line starting with "#" is a comment.
     public static string CleanName(string name)
     {
-        name = name.Replace('|', '/').Trim();
+        name = name.Replace('|', '/').Trim().TrimStart('#').Trim();
         return name.Length == 0 ? "Untitled" : name;
     }
 
@@ -202,7 +229,7 @@ public class Settings
         if (TaskbarSpot >= 0) text.Append($"taskbar={TaskbarSpot}\r\n");
         if (WindowBounds is { } b)
             text.Append($"window={(int)b.X},{(int)b.Y},{(int)b.Width},{(int)b.Height}{(WindowMaximized ? ",max" : "")}\r\n");
-        try { File.WriteAllText(FilePath, text.ToString()); } catch (Exception) { }
+        try { Store.WriteAtomic(FilePath, text.ToString()); } catch (Exception) { }
     }
 }
 

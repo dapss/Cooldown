@@ -116,8 +116,9 @@ their exe and never change your **Start with Windows** entry.
 2. Right-click the tray icon and choose **Exit**.
 3. Delete the folder containing `Cooldown.exe`.
 
-Cooldown only writes `resets.txt`, `sessions.txt` and `settings.txt` next to the exe (or, if that folder is
-read-only, in `%APPDATA%\Cooldown`), and the **Start with Windows** entry, which step 1 removes. The first time
+Cooldown only writes `resets.txt`, `sessions.txt` and `settings.txt` (and `cooldown.log`, if something ever
+goes wrong) next to the exe (or, if that folder is read-only, in `%APPDATA%\Cooldown`), and the
+**Start with Windows** entry, which step 1 removes. The first time
 it notifies you, Windows also records Cooldown as an app that sends notifications (its name and icon, so the
 buttons on a notification can start it). That's harmless to leave, and Windows lists it under
 **Settings > System > Notifications**.
