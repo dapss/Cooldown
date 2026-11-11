@@ -21,11 +21,27 @@ public class ResetView : INotifyPropertyChanged
         StartCommand = new RelayCommand(() => app.StartSession(this));
         UndoCommand = new RelayCommand(() => app.UndoStart(this));
         OpenCommand = new RelayCommand(() => app.OpenMain(this));
+        EditCommand = new RelayCommand(BeginEdit);
+        SaveCommand = new RelayCommand(() => { if (draft is { } end) app.ChangeSessionEnd(this, end); CancelEdit(); });
+        CancelCommand = new RelayCommand(CancelEdit);
+        EndNowCommand = new RelayCommand(() => { app.ChangeSessionEnd(this, null); CancelEdit(); });
+        HourUpCommand = new RelayCommand(() => Step(TimeSpan.FromHours(1)));
+        HourDownCommand = new RelayCommand(() => Step(TimeSpan.FromHours(-1)));
+        MinuteUpCommand = new RelayCommand(() => Step(TimeSpan.FromMinutes(1)));
+        MinuteDownCommand = new RelayCommand(() => Step(TimeSpan.FromMinutes(-1)));
     }
 
     public ICommand StartCommand { get; }
     public ICommand UndoCommand { get; }
     public ICommand OpenCommand { get; }
+    public ICommand EditCommand { get; }
+    public ICommand SaveCommand { get; }
+    public ICommand CancelCommand { get; }
+    public ICommand EndNowCommand { get; }
+    public ICommand HourUpCommand { get; }
+    public ICommand HourDownCommand { get; }
+    public ICommand MinuteUpCommand { get; }
+    public ICommand MinuteDownCommand { get; }
 
     public string Name => Model.Name;
 
@@ -48,6 +64,40 @@ public class ResetView : INotifyPropertyChanged
     public string SessionResetText => (ShowUndo ? "Started. Resets at " : "Resets at ") + SessionEndClock;
     public bool ShowUndo => app.CanUndo(this);
 
+    // ---- changing when the running session resets (the island's editor) ----
+
+    DateTime? draft;  // the reset time being picked; null when not editing
+
+    public bool Editing => draft.HasValue && SessionRunning;
+    public bool SessionShown => SessionRunning && !Editing;
+    public string DraftHour => draft?.ToString(Format.Use12h ? "%h" : "HH", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+    public string DraftMinute => draft?.ToString("mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+    public string DraftSuffix => Format.Use12h ? draft?.ToString("tt", System.Globalization.CultureInfo.InvariantCulture) ?? "" : "";
+    public string DraftLeft => draft is { } d ? "in " + Format.Compact(d - now) : "";
+
+    void BeginEdit()
+    {
+        if (Model.SessionEnd is not { } end) return;
+        now = DateTime.Now;
+        draft = Model.ClampSessionEnd(end, now);
+        Changed();
+    }
+
+    public void CancelEdit()
+    {
+        if (draft == null) return;
+        draft = null;
+        Changed();
+    }
+
+    public void Step(TimeSpan by)
+    {
+        if (draft is not { } d) return;
+        now = DateTime.Now;
+        draft = Model.ClampSessionEnd(d + by, now);
+        Changed();
+    }
+
     public System.Collections.ObjectModel.ObservableCollection<Banked> Banked => Model.Banked;
     public bool HasBanked => Model.Banked.Count > 0;
 
@@ -69,8 +119,11 @@ public class ResetView : INotifyPropertyChanged
     public void Refresh(DateTime at)
     {
         now = at;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        if (draft is { } d) draft = Model.ClampSessionEnd(d, at);  // time moves on while picking
+        Changed();
     }
+
+    void Changed() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }
 
 public class RelayCommand(Action run) : ICommand

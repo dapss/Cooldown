@@ -35,6 +35,18 @@ public class Reset
 
     public string Schedule => Day.ToString()[..3] + " " + Format.Clock(Time);
 
+    // When a session that's running can be set to reset: on a whole minute, at least a minute from now,
+    // and no later than a full session from now, since the window can't have started in the future.
+    public DateTime ClampSessionEnd(DateTime end, DateTime now)
+    {
+        DateTime earliest = Minute(now).AddMinutes(now.Second == 0 && now.Millisecond == 0 ? 1 : 2);
+        DateTime latest = Minute(now.AddHours(SessionHours));
+        end = Minute(end);
+        return end < earliest ? earliest : end > latest ? latest : end;
+    }
+
+    static DateTime Minute(DateTime t) => new(t.Year, t.Month, t.Day, t.Hour, t.Minute, 0, t.Kind);
+
     public Reset Copy() => new()
     {
         Name = Name, Day = Day, Time = Time, SessionHours = SessionHours, SessionEnd = SessionEnd, LastNext = LastNext

@@ -50,6 +50,7 @@ public partial class App : Application
         app.Start();
 #if DEBUG
         if (e.Args.Length == 2 && e.Args[0] == "--simulate-toast") app.SimulateToast(e.Args[1]);
+        if (e.Args.Length >= 1 && e.Args[0] == "--demo-editor") app.DemoEditor(e.Args.Length > 1 ? e.Args[1] : "island");
 #endif
 
         // Running Cooldown again opens the window of the copy that's already running.

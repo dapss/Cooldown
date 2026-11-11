@@ -44,6 +44,12 @@ public partial class IslandWindow : Window
     Native.RECT taskbar;
     bool taskbarHidden, lightTaskbar;
     double winW, winH, pillW = 120, cardH = 200, pillCX, pillY, cardY;  // DIPs, window coordinates
+
+    // The window keeps some empty, click-through room past the card's far edge, so the open card can
+    // grow a little (a session's editor opening, as it animates) without the window moving or
+    // resizing, which shows as a jump. Placing it again is for bigger changes, or while it's closed.
+    double placedH = 200;  // the card height the window is sized and placed for, headroom included
+    const double Headroom = 90;
     Rect shape;
 
     // Open / close animation: 0 = collapsed, 1 = open
@@ -89,6 +95,11 @@ public partial class IslandWindow : Window
         };
         Native.SetWinEventHook(3, 3, IntPtr.Zero, foregroundHook, 0, 0, 0);  // EVENT_SYSTEM_FOREGROUND
         app.Resets.CollectionChanged += (_, _) => { if (IsVisible) Remeasure(); };
+        // The card changes height on its own, such as when a session's editor opens: fit it at once.
+        CardPanel.SizeChanged += (_, e) =>
+        {
+            if (IsVisible && e.HeightChanged && Math.Ceiling(e.NewSize.Height) != cardH && !floatDragging) Remeasure();
+        };
     }
 
     double Ms => clock.Elapsed.TotalMilliseconds;
@@ -177,20 +188,22 @@ public partial class IslandWindow : Window
         CardList.Visibility = app.Resets.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         CardPanel.Measure(new Size(CardW, double.PositiveInfinity));
         cardH = Math.Ceiling(CardPanel.DesiredSize.Height);
-        Place();
+        bool shut = value == 0 && !animating;
+        if (shut || cardH > placedH || cardH < placedH - Headroom * 2) Place();
         Layout();
     }
 
     void Place()
     {
         winW = CardW + Margin_ * 2;
+        placedH = cardH + Headroom;
         if (docked) { PlaceDocked(); return; }
         var wa = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)anchor.X, (int)anchor.Y)).WorkingArea;
         if (!floatDragging) growDown = anchor.Y < wa.Top + wa.Height / 2;  // mid-drag, the drag decides
-        winH = cardH + Margin_ * 2;
+        winH = placedH + Margin_ * 2;
         pillCX = winW / 2;
         pillY = growDown ? Margin_ : winH - Margin_ - PillH;
-        cardY = growDown ? Margin_ : winH - Margin_ - cardH;
+        cardY = growDown ? Margin_ : winH - Margin_ - placedH;
         double left = anchor.X / scale - winW / 2;
         double top = growDown ? anchor.Y / scale - Margin_ : anchor.Y / scale + PillH + Margin_ - winH;
         SetBounds(left, top);
@@ -209,9 +222,9 @@ public partial class IslandWindow : Window
         bool bottom = tt > st + sh / 2;
         growDown = !bottom;
         double pillTop = tt + (tbm - tt - PillH) / 2;
-        double cardTop = bottom ? tt - 12 - cardH : tbm + 12;
+        double cardTop = bottom ? tt - 12 - placedH : tbm + 12;
         double winTop = (bottom ? cardTop : pillTop) - Margin_;
-        winH = (bottom ? pillTop + PillH : cardTop + cardH) + Margin_ - winTop;
+        winH = (bottom ? pillTop + PillH : cardTop + placedH) + Margin_ - winTop;
         double winLeft = Math.Clamp(cx - winW / 2, sl - Margin_ + 12, sr + Margin_ - 12 - winW);
         pillCX = cx - winLeft;
         pillY = pillTop - winTop;
@@ -236,7 +249,9 @@ public partial class IslandWindow : Window
         Root.Height = winH;
     }
 
-    Rect CardRect() => new(winW / 2 - CardW / 2, cardY, CardW, cardH);
+    // Next to the pill: at the top of the room the window keeps for it when opening downward, at the
+    // bottom when opening upward. Its edge by the pill stays put as its height changes.
+    Rect CardRect() => new(winW / 2 - CardW / 2, growDown ? cardY : cardY + placedH - cardH, CardW, cardH);
     Rect PillRect() => new(pillCX - pillW / 2, pillY, pillW, PillH);
 
     // ---- the pill ----
@@ -349,6 +364,7 @@ public partial class IslandWindow : Window
     {
         double to = open ? 1 : 0;
         if (to == target) return;
+        if (!open) foreach (ResetView v in app.Resets) v.CancelEdit();  // closing the card drops an unsaved change
         if (open) { UpdatePill(); Remeasure(); }
         from = value;
         target = to;
@@ -488,7 +504,7 @@ public partial class IslandWindow : Window
             // The card, the pill, and the gap between them in the taskbar.
             Rect area = ToScreen(Rect.Union(CardRect(), PillRect()));
             area.Inflate(8 * scale, 8 * scale);
-            bool busy = mouseDown || app.MenuOpen;
+            bool busy = mouseDown || app.MenuOpen || demoHold;
             if (area.Contains(cursor) || busy) offCardSince = -1;
             else if (offCardSince < 0) offCardSince = now;
             else if (now - offCardSince >= CloseAfterMs && !animating)
@@ -670,6 +686,30 @@ public partial class IslandWindow : Window
         base.OnMouseRightButtonUp(e);
         noHoverOpen = true;  // a right-click means the menu, not the card, until the mouse leaves
         app.ShowMenu();
+    }
+
+#if DEBUG
+    bool demoHold;  // --demo-editor: the card stays open wherever the mouse is
+
+    public void DemoHoldOpen()
+    {
+        demoHold = true;
+        ghost = ghostTarget = 0;
+        Apply();
+        Animate(true);
+    }
+#else
+    const bool demoHold = false;
+#endif
+
+    // Scrolling on the editor's hour or minute steps it, like its arrows.
+    void Hour_Wheel(object sender, MouseWheelEventArgs e) => Wheel(sender, e, TimeSpan.FromHours(1));
+    void Minute_Wheel(object sender, MouseWheelEventArgs e) => Wheel(sender, e, TimeSpan.FromMinutes(1));
+
+    static void Wheel(object sender, MouseWheelEventArgs e, TimeSpan step)
+    {
+        if (sender is FrameworkElement { DataContext: ResetView view } && e.Delta != 0) view.Step(e.Delta > 0 ? step : -step);
+        e.Handled = true;
     }
 
     void Edit_Click(object sender, RoutedEventArgs e) => app.OpenMain();

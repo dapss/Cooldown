@@ -1,4 +1,4 @@
-<Window x:Class="Cooldown.IslandWindow"
+﻿<Window x:Class="Cooldown.IslandWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Cooldown"
@@ -9,6 +9,7 @@
     <!-- The island is always dark, whatever the Windows theme, except the collapsed pill on a light taskbar. -->
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
+        <local:HoverHint x:Key="HoverHint" />
         <SolidColorBrush x:Key="Ink" Color="#F2F2F7" />
         <SolidColorBrush x:Key="InkSoft" Color="#C8F2F2F7" />
         <SolidColorBrush x:Key="Muted" Color="#A0A0A8" />
@@ -101,6 +102,82 @@
             <Setter Property="Background" Value="#1CFFFFFF" />
         </Style>
 
+        <!-- The editor's hour and minute: a capsule with arrows either side of the number -->
+        <Style x:Key="Spin" TargetType="Border">
+            <Setter Property="Background" Value="#1CFFFFFF" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="2,0" />
+        </Style>
+
+        <Style x:Key="SpinValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource Ink}" />
+            <Setter Property="MinWidth" Value="24" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Hold to keep stepping -->
+        <Style x:Key="Step" TargetType="RepeatButton">
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Delay" Value="400" />
+            <Setter Property="Interval" Value="70" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="12" Width="24" Height="24">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1EFFFFFF" />
+                                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#10FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The running session and its editor take turns in one spot: whichever appears fades in while
+             the card eases to its new height. -->
+        <Style x:Key="SessionBlock" TargetType="Button" BasedOn="{StaticResource Ghost}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SessionShown}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.2" To="1" Duration="0:0:0.2" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SessionEditor" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Editing}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.2" To="1" Duration="0:0:0.2" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <DataTemplate x:Key="CardRow" DataType="{x:Type local:ResetView}">
             <StackPanel Margin="0,0,0,16">
                 <Grid>
@@ -113,29 +190,84 @@
                 <TextBlock Text="{Binding BankedText}" Style="{StaticResource Small}" Margin="0,3,0,0"
                            Visibility="{Binding HasBanked, Converter={StaticResource Visible}}" />
 
-                <!-- A running session: click it to change it in the app -->
-                <Button Style="{StaticResource Ghost}" Command="{Binding OpenCommand}" Margin="-8,8,-8,-4" Padding="8,6,8,6"
-                        AutomationProperties.HelpText="Opens it in Cooldown"
-                        Visibility="{Binding SessionRunning, Converter={StaticResource Visible}}">
-                    <AutomationProperties.Name>
-                        <MultiBinding StringFormat="{}{0}, {1} left">
-                            <Binding Path="SessionLabel" />
-                            <Binding Path="SessionCountdown" />
-                        </MultiBinding>
-                    </AutomationProperties.Name>
-                    <StackPanel>
-                        <Grid>
-                            <TextBlock Text="{Binding SessionLabel}" Style="{StaticResource Small}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                            <TextBlock Text="{Binding SessionCountdown}" HorizontalAlignment="Right" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Orange}" />
-                        </Grid>
-                        <local:Bar Fraction="{Binding SessionProgress}" Fill="{StaticResource Orange}" Track="{StaticResource Track}" Margin="0,8,0,0" />
-                        <Grid Margin="0,6,0,0" MinHeight="26">
-                            <TextBlock Text="{Binding SessionResetText}" Style="{StaticResource Small}" VerticalAlignment="Center" Margin="0,0,70,0" />
-                            <Button Content="Undo" AutomationProperties.Name="Undo start" Style="{StaticResource UndoPill}" Command="{Binding UndoCommand}" HorizontalAlignment="Right"
-                                    Visibility="{Binding ShowUndo, Converter={StaticResource Visible}}" />
-                        </Grid>
-                    </StackPanel>
-                </Button>
+                <!-- A running session, and its editor in the same spot: the area eases to the height of
+                     whichever is showing. -->
+                <local:SmoothHeight Margin="-8,8,-8,-4" Visibility="{Binding SessionRunning, Converter={StaticResource Visible}}">
+                    <Grid>
+                        <!-- A running session: click it to change when it resets, right here -->
+                        <Button x:Name="SessionButton" Style="{StaticResource SessionBlock}" Command="{Binding EditCommand}" Padding="8,6,8,6"
+                                AutomationProperties.HelpText="Change when it resets"
+                                Visibility="{Binding SessionShown, Converter={StaticResource Visible}}">
+                            <AutomationProperties.Name>
+                                <MultiBinding StringFormat="{}{0}, {1} left">
+                                    <Binding Path="SessionLabel" />
+                                    <Binding Path="SessionCountdown" />
+                                </MultiBinding>
+                            </AutomationProperties.Name>
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="{Binding SessionLabel}" Style="{StaticResource Small}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                    <TextBlock Text="{Binding SessionCountdown}" HorizontalAlignment="Right" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Orange}" />
+                                </Grid>
+                                <local:Bar Fraction="{Binding SessionProgress}" Fill="{StaticResource Orange}" Track="{StaticResource Track}" Margin="0,8,0,0" />
+                                <Grid Margin="0,6,0,0" MinHeight="26">
+                                    <TextBlock Text="{Binding SessionResetText}" Style="{StaticResource Small}" VerticalAlignment="Center" Margin="0,0,70,0" />
+                                    <!-- The hint that it can be changed: on hover, where Undo isn't -->
+                                    <TextBlock Text="Change" Style="{StaticResource Small}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0">
+                                        <TextBlock.Visibility>
+                                            <MultiBinding Converter="{StaticResource HoverHint}">
+                                                <Binding Path="IsMouseOver" ElementName="SessionButton" />
+                                                <Binding Path="ShowUndo" />
+                                            </MultiBinding>
+                                        </TextBlock.Visibility>
+                                    </TextBlock>
+                                    <Button Content="Undo" AutomationProperties.Name="Undo start" Style="{StaticResource UndoPill}" Command="{Binding UndoCommand}" HorizontalAlignment="Right"
+                                            Visibility="{Binding ShowUndo, Converter={StaticResource Visible}}" />
+                                </Grid>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Changing when the running session resets. Mouse only: the island never takes the
+                             keyboard from the app you're in. Click or hold the arrows, or scroll on a number. -->
+                        <Border Style="{StaticResource SessionEditor}" Padding="10,8,8,8" CornerRadius="8" Background="#14FFFFFF"
+                                Visibility="{Binding Editing, Converter={StaticResource Visible}}">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Style="{StaticResource Small}" Foreground="{StaticResource Ink}">
+                                        <Run Text="{Binding SessionLabel, Mode=OneWay}" /><Run Text=" resets at" />
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding DraftLeft}" HorizontalAlignment="Right" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Orange}" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                    <Border Style="{StaticResource Spin}" MouseWheel="Hour_Wheel" ToolTip="Hour">
+                                        <StackPanel Orientation="Horizontal">
+                                            <RepeatButton Style="{StaticResource Step}" Content="&#xE70D;" Command="{Binding HourDownCommand}" AutomationProperties.Name="Hour earlier" />
+                                            <TextBlock Text="{Binding DraftHour}" Style="{StaticResource SpinValue}" />
+                                            <RepeatButton Style="{StaticResource Step}" Content="&#xE70E;" Command="{Binding HourUpCommand}" AutomationProperties.Name="Hour later" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text=":" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="6,0,6,2" />
+                                    <Border Style="{StaticResource Spin}" MouseWheel="Minute_Wheel" ToolTip="Minute">
+                                        <StackPanel Orientation="Horizontal">
+                                            <RepeatButton Style="{StaticResource Step}" Content="&#xE70D;" Command="{Binding MinuteDownCommand}" AutomationProperties.Name="Minute earlier" />
+                                            <TextBlock Text="{Binding DraftMinute}" Style="{StaticResource SpinValue}" />
+                                            <RepeatButton Style="{StaticResource Step}" Content="&#xE70E;" Command="{Binding MinuteUpCommand}" AutomationProperties.Name="Minute later" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="{Binding DraftSuffix}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                </StackPanel>
+                                <Grid Margin="-2,10,0,0">
+                                    <Button Style="{StaticResource Ghost}" Content="End session" Command="{Binding EndNowCommand}" HorizontalAlignment="Left"
+                                            AutomationProperties.HelpText="The limit has already reset" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Style="{StaticResource Ghost}" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,4,0" />
+                                        <Button Style="{StaticResource Pill}" Content="Save" Command="{Binding SaveCommand}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </local:SmoothHeight>
 
                 <!-- A session that isn't running -->
                 <Grid Margin="0,12,0,0" Visibility="{Binding SessionIdle, Converter={StaticResource Visible}}">

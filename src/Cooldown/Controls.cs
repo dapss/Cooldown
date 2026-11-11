@@ -138,3 +138,64 @@ public class TimeInput : StackPanel
         ValueChanged?.Invoke(value);
     }
 }
+
+// Shows the "Change" hint on a hovered session, unless Undo has that spot: (hovered, showing Undo).
+public class HoverHint : System.Windows.Data.IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
+        values is [true, false] ? Visibility.Visible : Visibility.Collapsed;
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+// Eases to its content's new height instead of snapping, clipping the content as it goes: the
+// island's 5-hour area, which swaps between the countdown and its editor. The rows below it slide
+// along smoothly. Snaps when hidden, the first time, and when Windows' animation effects are off.
+public class SmoothHeight : System.Windows.Controls.Decorator
+{
+    static readonly DependencyProperty ShownProperty = DependencyProperty.Register("Shown", typeof(double), typeof(SmoothHeight),
+        new FrameworkPropertyMetadata(double.NaN, FrameworkPropertyMetadataOptions.AffectsMeasure));
+
+    double target = double.NaN;
+
+    public SmoothHeight()
+    {
+        ClipToBounds = true;
+        // Shown again later, it starts at its content's height rather than easing from a stale one.
+        IsVisibleChanged += (_, e) => { if (e.NewValue is false) target = double.NaN; };
+    }
+
+    protected override Size MeasureOverride(Size available)
+    {
+        if (Child == null) return new Size();
+        Child.Measure(new Size(available.Width, double.PositiveInfinity));
+        double height = Child.DesiredSize.Height;
+        if (height != target)
+        {
+            double shown = (double)GetValue(ShownProperty);
+            bool snap = double.IsNaN(target) || double.IsNaN(shown) || !IsVisible || !SystemParameters.ClientAreaAnimation;
+            target = height;
+            if (snap)
+            {
+                BeginAnimation(ShownProperty, null);
+                SetValue(ShownProperty, height);
+            }
+            else
+            {
+                BeginAnimation(ShownProperty, new System.Windows.Media.Animation.DoubleAnimation(shown, height, TimeSpan.FromMilliseconds(220))
+                {
+                    EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut },
+                });
+            }
+        }
+        double now = (double)GetValue(ShownProperty);
+        return new Size(Child.DesiredSize.Width, double.IsNaN(now) ? height : Math.Round(now));
+    }
+
+    protected override Size ArrangeOverride(Size final)
+    {
+        Child?.Arrange(new Rect(0, 0, final.Width, Math.Max(final.Height, Child.DesiredSize.Height)));
+        return final;
+    }
+}

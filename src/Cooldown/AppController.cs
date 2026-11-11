@@ -121,6 +121,13 @@ public class AppController
         SetSessionEnd(view, undoPrevious);
     }
 
+    // From the island's editor: the new time replaces the start, so there's nothing left to undo.
+    public void ChangeSessionEnd(ResetView view, DateTime? end)
+    {
+        if (undoFor == view) undoFor = null;
+        SetSessionEnd(view, end);
+    }
+
     public void SetSessionEnd(ResetView view, DateTime? end)
     {
         view.Model.SessionEnd = end;
@@ -262,6 +269,25 @@ public class AppController
 
 #if DEBUG
     public void SimulateToast(string arguments) => notifier.Simulate(arguments);
+
+    // Debug builds only, for watching the island's session editor animate without touching the mouse:
+    // --demo-editor island|taskbar. Holds the card open and opens and closes the editor every 1.5 s.
+    public void DemoEditor(string mode)
+    {
+        SetMode(mode == "taskbar" ? DisplayMode.Taskbar : DisplayMode.Island);
+        ResetView? view = Resets.FirstOrDefault(v => v.HasSession);
+        if (view == null) return;
+        if (!view.SessionRunning) SetSessionEnd(view, DateTime.Now.AddHours(view.Model.SessionHours));
+        island.DemoHoldOpen();
+        bool editing = false;
+        var toggle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+        toggle.Tick += (_, _) =>
+        {
+            editing = !editing;
+            (editing ? view.EditCommand : view.CancelCommand).Execute(null);
+        };
+        toggle.Start();
+    }
 #endif
 
     public void SetReminders(int weekMinutes, int sessionMinutes, int bankedMinutes)

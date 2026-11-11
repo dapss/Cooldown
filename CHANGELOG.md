@@ -7,6 +7,7 @@ What changed in each version of Cooldown. When a version is released, its sectio
 
 ### Added
 - **Banked resets.** If your AI lets you keep a reset for later, add the date and time it expires under **Banked resets**. Cooldown shows how many you have and when the next one expires, reminds you a day before (change it in **Settings > Reminders**), and tells you when one has expired, even if your PC was off at the time.
+- **Set the exact time a 5-hour limit resets, right from the island.** Click the running limit on the open island and it turns into a small editor: pick the hour and minute with the arrows (hold them to go faster) or by scrolling, then **Save**. Handy when you started chatting before you pressed Start. **End session** is there too, for when the limit has already reset.
 
 ### Changed
 - **Moving the floating island is easier.** Rest the mouse on the island for a moment and it turns solid: drag it from there without opening it, or click it to open it. The open card can be dragged from anywhere, even a row or button. The island follows the mouse, stays on screen and snaps to the middle of the screen. Drag the open card into the bottom half of the screen and it switches to opening upward on the spot, so it lands exactly where you drop it.
