@@ -110,6 +110,18 @@ in [`src/Cooldown`](src/Cooldown):
 To run it while working on it, `dotnet run --project src/Cooldown`. Debug builds keep their own data next to
 their exe and never change your **Start with Windows** entry.
 
+To run the tests, `dotnet test tests/Cooldown.Tests`. They cover the reset times, the countdown text and the
+data files, and run on every push along with a build of `Cooldown.exe`
+([`ci.yml`](.github/workflows/ci.yml)).
+
+### Releasing
+
+1. In [`CHANGELOG.md`](CHANGELOG.md), rename `## Unreleased` to `## X.Y.Z (date)`.
+2. Set the same version in [`Cooldown.csproj`](src/Cooldown/Cooldown.csproj) and
+   [`app.manifest`](src/Cooldown/app.manifest), and commit.
+3. Push a `vX.Y.Z` tag. CI checks the three agree, builds `Cooldown.exe` and publishes the GitHub release, with
+   that section of the changelog as its notes.
+
 ## Uninstall
 
 1. Open Cooldown's **Settings** and turn off **Start with Windows**.
