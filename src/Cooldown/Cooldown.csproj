@@ -14,7 +14,7 @@
     <ApplicationIcon>Assets\Cooldown.ico</ApplicationIcon>
     <AssemblyName>Cooldown</AssemblyName>
     <RootNamespace>Cooldown</RootNamespace>
-    <Version>2.1.0</Version>
+    <Version>2.1.1</Version>
     <!-- Shown as the app's name on Windows notifications and in Task Manager. -->
     <Product>Cooldown</Product>
     <AssemblyTitle>Cooldown</AssemblyTitle>
