@@ -8,6 +8,12 @@ What changed in each version of Cooldown. When a version is released, its sectio
 ### Added
 - **Banked resets.** If your AI lets you keep a reset for later, add the date and time it expires under **Banked resets**. Cooldown shows how many you have and when the next one expires, reminds you a day before (change it in **Settings > Reminders**), and tells you when one has expired, even if your PC was off at the time.
 
+### Changed
+- **Moving the floating island is easier.** Rest the mouse on the island for a moment and it turns solid: drag it from there without opening it, or click it to open it. The open card can be dragged from anywhere, even a row or button. The island follows the mouse, stays on screen and snaps to the middle of the screen. Drag the open card into the bottom half of the screen and it switches to opening upward on the spot, so it lands exactly where you drop it.
+
+### Fixed
+- **No more empty Cooldown window in Alt+Tab** after you've used Cooldown's menu.
+
 ### Maintenance
 - Every change is now built and tested automatically, and a version tag builds `Cooldown.exe` and publishes the release.
 

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -23,7 +23,7 @@ namespace Cooldown;
 public partial class IslandWindow : Window
 {
     const double Margin_ = 18, PillH = 30, CardW = 320;
-    const double OpenAfterMs = 650, DockedOpenAfterMs = 300, CloseAfterMs = 300, GhostOpacity = 0.12;
+    const double OpenAfterMs = 650, GrabAfterMs = 300, DockedOpenAfterMs = 300, CloseAfterMs = 300, GhostOpacity = 0.12;
 
     static readonly Color Fill = Color.FromRgb(14, 14, 16);
     static readonly Brush Ink = Frozen(Color.FromRgb(242, 242, 247)), Muted = Frozen(Color.FromRgb(160, 160, 168));
@@ -60,6 +60,11 @@ public partial class IslandWindow : Window
     bool dockDragging, mouseDown;
     double grabDX, downX;
 
+    // Dragging the floating island by its open card
+    bool floatPressed, floatDragging, grabbedCard;
+    bool pillGrab, justDropped;  // the pill has turned solid under a resting mouse, so it can be grabbed
+    Native.POINT pressAt, grabOffset;  // screen pixels; the offset is from the window's top-left
+
     public IslandWindow(AppController app)
     {
         this.app = app;
@@ -70,7 +75,8 @@ public partial class IslandWindow : Window
         int ex = Native.GetWindowLong(hwnd, Native.GWL_EXSTYLE);
         Native.SetWindowLong(hwnd, Native.GWL_EXSTYLE, ex | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE);
         scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        DpiChanged += (_, e) => { scale = e.NewDpi.DpiScaleX; Place(); Layout(); };
+        // Mid-drag the drag itself places the window; placing it here would snap it back.
+        DpiChanged += (_, e) => { scale = e.NewDpi.DpiScaleX; if (!floatDragging) Place(); Layout(); };
 
         watch.Tick += (_, _) => Watch();
         IsVisibleChanged += (_, _) => { if (IsVisible) watch.Start(); else watch.Stop(); };
@@ -113,7 +119,7 @@ public partial class IslandWindow : Window
         animating = false;
         CompositionTarget.Rendering -= OnFrame;
         value = target = 0;
-        onPill = hoverPill = dockDragging = false;
+        onPill = hoverPill = dockDragging = pillGrab = justDropped = false;
         ghost = ghostTarget = 0;
         Show();
         Remeasure();
@@ -180,7 +186,7 @@ public partial class IslandWindow : Window
         winW = CardW + Margin_ * 2;
         if (docked) { PlaceDocked(); return; }
         var wa = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)anchor.X, (int)anchor.Y)).WorkingArea;
-        growDown = anchor.Y < wa.Top + wa.Height / 2;
+        if (!floatDragging) growDown = anchor.Y < wa.Top + wa.Height / 2;  // mid-drag, the drag decides
         winH = cardH + Margin_ * 2;
         pillCX = winW / 2;
         pillY = growDown ? Margin_ : winH - Margin_ - PillH;
@@ -398,7 +404,7 @@ public partial class IslandWindow : Window
             animating = false;
             CompositionTarget.Rendering -= OnFrame;
             value = target = 0;
-            onPill = false;
+            onPill = pillGrab = justDropped = false;
             ghost = ghostTarget = 0;
             Layout();
         }
@@ -446,28 +452,34 @@ public partial class IslandWindow : Window
         {
             Rect pill = ToScreen(PillRect());
             pill.Inflate(3 * scale, 3 * scale);
-            if (pill.Contains(cursor))
+            if (floatPressed || pill.Contains(cursor))
             {
                 if (!onPill) { onPill = true; clickedThrough = false; restAt = c; restSince = now; }
-                if (Native.MouseButtonDown) clickedThrough = true;
+                if (Native.MouseButtonDown && !pillGrab) clickedThrough = true;
                 if (Math.Abs(c.X - restAt.X) > 4 * scale || Math.Abs(c.Y - restAt.Y) > 4 * scale) { restAt = c; restSince = now; }
                 double rest = now - restSince;
-                if (clickedThrough) ghostTarget = 1;
+                if (floatPressed || justDropped) ghostTarget = 0;  // being moved, or just put down
+                else if (clickedThrough) ghostTarget = 1;
                 else if (rest >= OpenAfterMs)
                 {
-                    onPill = false;
+                    onPill = pillGrab = false;
                     ghost = ghostTarget = 0;
                     offCardSince = -1;
                     Apply();
                     Animate(true);
                     return;
                 }
-                // Fades away at once, then back in while the mouse rests: the cue that it's about to open.
-                else ghostTarget = rest < 180 ? 1 : 1 - (rest - 180) / (OpenAfterMs - 180);
+                else
+                {
+                    // Fades away at once, then back in while the mouse rests: the cue that it's about to
+                    // open. Partway there it turns solid and can be grabbed, and stays so while on it.
+                    if (rest >= GrabAfterMs) pillGrab = true;
+                    ghostTarget = pillGrab ? 0 : rest < 180 ? 1 : 1 - (rest - 180) / (OpenAfterMs - 180);
+                }
             }
             else
             {
-                onPill = false;
+                onPill = pillGrab = justDropped = false;
                 ghostTarget = 0;
             }
         }
@@ -497,7 +509,7 @@ public partial class IslandWindow : Window
     // Applies the fade and click-through for the current state.
     void Apply()
     {
-        bool through = Gone || ghost > 0.02 || ghostTarget > 0;
+        bool through = Gone || (!pillGrab && (ghost > 0.02 || ghostTarget > 0));
         if (through != clickThrough)
         {
             clickThrough = through;
@@ -516,18 +528,110 @@ public partial class IslandWindow : Window
         Point p = e.GetPosition(this);
         downX = p.X;
         grabDX = p.X - pillCX;
-        if (docked && target == 0) { CaptureMouse(); return; }
-        if (!docked && target == 1 && !animating)
+        if (docked && target == 0) CaptureMouse();
+    }
+
+    // ---- moving the floating island ----
+    //
+    // Grab the open card anywhere, rows and buttons included, or the pill once the mouse has rested on
+    // it long enough for it to turn solid. A press that doesn't move past a few pixels is an ordinary
+    // click (on the pill, it opens the card). The island follows the mouse exactly, stays whole on the
+    // screen it's over, and lines up with the screen's center when it comes close. Dragged into the
+    // bottom half, the card switches to opening upward, and back again at the top.
+
+    protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseLeftButtonDown(e);
+        if (docked) return;
+        if (target == 1 && value >= 0.9) grabbedCard = true;
+        else if (target == 0 && !animating && pillGrab) grabbedCard = false;
+        else return;
+        floatPressed = mouseDown = true;
+        Native.GetCursorPos(out pressAt);
+        Rect r = ToScreen(grabbedCard ? CardRect() : PillRect());
+        grabOffset = new Native.POINT { X = pressAt.X - (int)r.X, Y = pressAt.Y - (int)r.Y };
+    }
+
+    protected override void OnPreviewMouseMove(MouseEventArgs e)
+    {
+        base.OnPreviewMouseMove(e);
+        if (!floatPressed) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { EndFloatDrag(); return; }
+        Native.GetCursorPos(out Native.POINT c);
+        if (!floatDragging)
         {
-            // Drag the open card to move the floating island.
-            try { DragMove(); } catch (InvalidOperationException) { }
-            mouseDown = false;
-            Native.GetWindowRect(hwnd, out Native.RECT w);
-            anchor = new Point(w.Left + winW / 2 * scale, growDown ? w.Top + Margin_ * scale : w.Top + (winH - Margin_ - PillH) * scale);
-            Place();
-            Layout();
-            app.IslandMoved(anchor);
+            if (Math.Abs(c.X - pressAt.X) < 4 * scale && Math.Abs(c.Y - pressAt.Y) < 4 * scale) return;
+            floatDragging = true;
+            CaptureMouse();  // takes the press from any button under it, so letting go won't click it
+            Mouse.OverrideCursor = Cursors.SizeAll;
         }
+        MoveTo(c);
+        e.Handled = true;
+    }
+
+    protected override void OnPreviewMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseLeftButtonUp(e);
+        if (!floatPressed) return;
+        e.Handled = floatDragging || !grabbedCard;
+        EndFloatDrag();
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        // Only the window's own capture: a button losing it to the window as a drag starts bubbles here too.
+        if (floatDragging && e.OriginalSource == this) EndFloatDrag();
+    }
+
+    void MoveTo(Native.POINT cursor)
+    {
+        var wa = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(cursor.X, cursor.Y)).WorkingArea;
+        Rect grabbed = grabbedCard ? CardRect() : PillRect();
+        double top = cursor.Y - grabOffset.Y, cx = cursor.X - grabOffset.X + grabbed.Width * scale / 2;
+
+        // Room for the card wherever it ends up, and the grabbed part whole on screen.
+        double half = CardW / 2 * scale;
+        cx = Math.Clamp(cx, wa.Left + half, Math.Max(wa.Left + half, wa.Right - half));
+        top = Math.Clamp(top, wa.Top, Math.Max(wa.Top, wa.Bottom - grabbed.Height * scale));
+
+        double screenCenter = wa.Left + wa.Width / 2.0, middle = wa.Top + wa.Height / 2.0;
+        if (Math.Abs(cx - screenCenter) < 16 * scale) cx = screenCenter;
+
+        // The pill sits at the top of the card when it opens downward, at the bottom when it opens
+        // upward; the card itself stays under the mouse either way. Near the middle, where both fit
+        // the rule, it keeps the side it has, so it doesn't flicker between them.
+        double anchorY = top;
+        if (grabbedCard)
+        {
+            double downY = top, upY = top + (cardH - PillH) * scale;
+            bool downFits = downY < middle, upFits = upY >= middle;
+            if (downFits != upFits) growDown = downFits;
+            anchorY = growDown ? downY : upY;
+        }
+        else growDown = top < middle;
+
+        anchor = new Point(Math.Round(cx), Math.Round(anchorY));
+        Place();
+        Layout();
+    }
+
+    void EndFloatDrag()
+    {
+        bool moved = floatDragging;
+        floatPressed = floatDragging = mouseDown = false;
+        Mouse.OverrideCursor = null;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+        if (!moved)
+        {
+            // A click on the pill opens the card.
+            if (!grabbedCard) { onPill = pillGrab = false; ghost = ghostTarget = 0; offCardSince = -1; Apply(); Animate(true); }
+            return;
+        }
+        app.IslandMoved(anchor);
+        if (!grabbedCard) justDropped = true;  // stays solid under the mouse, without opening, until it leaves
+        Place();
+        Layout();
     }
 
     protected override void OnMouseMove(MouseEventArgs e)

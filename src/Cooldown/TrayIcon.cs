@@ -41,6 +41,10 @@ public sealed class TrayIcon : IDisposable
             WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false,
             Width = 0, Height = 0, Left = -32000, Top = -32000, AllowsTransparency = true, Background = null,
         };
+        // A tool window, or once the menu has brought it to the front, Alt+Tab lists it as an empty,
+        // untitled window.
+        IntPtr host = new WindowInteropHelper(menuHost).EnsureHandle();
+        Native.SetWindowLong(host, Native.GWL_EXSTYLE, Native.GetWindowLong(host, Native.GWL_EXSTYLE) | Native.WS_EX_TOOLWINDOW);
         menuHost.Show();
     }
 
