@@ -1,0 +1,71 @@
+name: Scheduled release
+
+# Every Monday: if CHANGELOG.md has anything under "## Unreleased" that users will see, make it the
+# next version (see .github/scripts/prepare-release.sh for how the number is picked), commit
+# "Version X.Y.Z" to main, tag it, and start CI on the tag, which tests, builds and publishes the
+# release. Weeks with nothing new are skipped.
+#
+# Run it by hand from the Actions tab too; "dry run" shows what it would release without changing
+# anything.
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Mondays 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show what would be released
+        type: boolean
+        default: false
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push the version commit and tag
+      actions: write   # start CI on the tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Prepare the version
+        id: prepare
+        run: |
+          version="$(bash .github/scripts/prepare-release.sh)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$version" ]; then
+            echo "Nothing new under Unreleased in CHANGELOG.md: no release this week." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null || git ls-remote --exit-code --tags origin "v$version" > /dev/null; then
+            echo "error: tag v$version already exists" >&2
+            exit 1
+          fi
+          # The same check CI makes on the tag, so a problem shows up before anything is pushed.
+          bash .github/scripts/release-notes.sh "v$version" > notes.md
+          { echo "## Cooldown $version"; echo; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat
+
+      - name: Commit, tag and push
+        if: steps.prepare.outputs.version != '' && !inputs.dry_run
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Version $VERSION"
+          git tag "v$VERSION"
+          git push --atomic origin main "v$VERSION"
+
+      # A tag pushed with this workflow's token doesn't start other workflows on its own; starting
+      # one directly does.
+      - name: Start the release build
+        if: steps.prepare.outputs.version != '' && !inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          gh workflow run ci.yml --ref "v$VERSION"
+          echo "Started CI on v$VERSION; it publishes the release when the build passes." >> "$GITHUB_STEP_SUMMARY"

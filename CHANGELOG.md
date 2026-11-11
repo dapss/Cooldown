@@ -16,6 +16,7 @@ What changed in each version of Cooldown. When a version is released, its sectio
 
 ### Maintenance
 - Every change is now built and tested automatically, and a version tag builds `Cooldown.exe` and publishes the release.
+- New versions are released automatically every Monday when there's something new in this changelog.
 
 ## 2.1.1 (2026-11-11)
 

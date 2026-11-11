@@ -3,6 +3,7 @@ name: CI
 # Every push to main and every pull request: run the tests and build Cooldown.exe.
 # A version tag (v2.1.1): the same, then publish a GitHub release with that exe, using the
 # version's section of CHANGELOG.md as the notes. Don't create the release by hand as well.
+# Tags usually come from the scheduled release (scheduled-release.yml) every Monday.
 on:
   push:
     branches: [main]
@@ -10,6 +11,8 @@ on:
     paths-ignore: ['**.md', 'LICENSE']
   pull_request:
     paths-ignore: ['**.md', 'LICENSE']
+  # Started on a tag by the scheduled release (a tag it pushes can't start this by itself).
+  workflow_dispatch:
 
 permissions:
   contents: read
