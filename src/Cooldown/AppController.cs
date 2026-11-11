@@ -83,10 +83,11 @@ public class AppController
         Save();
     }
 
-    // Writes both files; sessions first, so a renamed reset keeps its running session.
+    // Writes every file; sessions and banked resets first, so a renamed reset keeps them.
     public void Save()
     {
         Store.SaveSessions(Resets.Select(v => v.Model));
+        Store.SaveBanked(Resets.Select(v => v.Model));
         try
         {
             Store.SaveResets(Resets.Select(v => v.Model));
@@ -127,6 +128,56 @@ public class AppController
         Tick();
     }
 
+    // ---- banked resets ----
+
+    public void AddBanked(ResetView view, DateTime expires)
+    {
+        // Already inside the reminder time: it has just been typed in, so there's nothing to remind of.
+        int lead = Settings.RemindBankedMinutes;
+        bool reminded = lead > 0 && expires - DateTime.Now <= TimeSpan.FromMinutes(lead);
+        view.Model.AddBanked(expires, reminded);
+        Store.SaveBanked(Resets.Select(v => v.Model));
+        Tick();
+    }
+
+    public void RemoveBanked(ResetView view, Banked banked)
+    {
+        view.Model.Banked.Remove(banked);
+        Store.SaveBanked(Resets.Select(v => v.Model));
+        Tick();
+    }
+
+    // Drops banked resets that have expired, and reminds before one does. Unlike a session window, one
+    // that expired while the PC was off is still announced: it's a loss worth knowing about. A reminder
+    // is sent once and remembered in banked.txt, so one that came due while the PC was off still
+    // arrives, and restarting doesn't repeat it.
+    bool CheckBanked(ResetView v, DateTime now)
+    {
+        Reset r = v.Model;
+        int lead = Settings.RemindBankedMinutes;
+        bool changed = false;
+        for (int i = r.Banked.Count - 1; i >= 0; i--)
+        {
+            Banked b = r.Banked[i];
+            TimeSpan left = b.Expires - now;
+            if (left <= TimeSpan.Zero)
+            {
+                r.Banked.RemoveAt(i);
+                Notify(v, "A banked reset for " + r.Name + " has expired", "It expired " + Format.When(b.Expires) + ".");
+                changed = true;
+            }
+            else if (Settings.Notify && lead > 0 && !b.Reminded && left <= TimeSpan.FromMinutes(lead))
+            {
+                b.Reminded = true;
+                bool onTime = Math.Abs((left - TimeSpan.FromMinutes(lead)).TotalMinutes) < 2;
+                Notify(v, Possessive(r.Name) + " banked reset expires in " + (onTime ? Lead(lead) : Format.Compact(left)),
+                    "It expires " + Format.When(b.Expires) + ". Use it before then, or it's lost.");
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     // ---- clock ----
 
     void Tick()
@@ -135,7 +186,7 @@ public class AppController
         catch (Exception) { }  // file mid-save; try again next tick
 
         DateTime now = DateTime.Now;
-        bool sessionsChanged = false;
+        bool sessionsChanged = false, bankedChanged = false;
         foreach (ResetView v in Resets)
         {
             Reset r = v.Model;
@@ -155,9 +206,11 @@ public class AppController
                 sessionsChanged = true;
             }
             Remind(v, now, next);
+            if (CheckBanked(v, now)) bankedChanged = true;
             v.Refresh(now);
         }
         if (sessionsChanged) Store.SaveSessions(Resets.Select(v => v.Model));
+        if (bankedChanged) Store.SaveBanked(Resets.Select(v => v.Model));
         tray.Update();
         island.UpdateTimes();
         Ticked?.Invoke();
@@ -196,6 +249,7 @@ public class AppController
     {
         1440 => "1 day",
         60 => "1 hour",
+        _ when minutes % 1440 == 0 => minutes / 1440 + " days",
         _ when minutes % 60 == 0 => minutes / 60 + " hours",
         _ => minutes + " minutes",
     };
@@ -210,10 +264,11 @@ public class AppController
     public void SimulateToast(string arguments) => notifier.Simulate(arguments);
 #endif
 
-    public void SetReminders(int weekMinutes, int sessionMinutes)
+    public void SetReminders(int weekMinutes, int sessionMinutes, int bankedMinutes)
     {
         Settings.RemindWeekMinutes = weekMinutes;
         Settings.RemindSessionMinutes = sessionMinutes;
+        Settings.RemindBankedMinutes = bankedMinutes;
         Settings.Save();
     }
 

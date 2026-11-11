@@ -4,13 +4,15 @@ using Microsoft.Win32;
 
 namespace Cooldown.Core;
 
-// resets.txt holds the reset list, sessions.txt the running session windows, settings.txt the
-// preferences. Same plain-text files as version 1, so existing setups carry over.
+// resets.txt holds the reset list, sessions.txt the running session windows, banked.txt the banked
+// resets, settings.txt the preferences. resets.txt is the same plain-text file as in version 1, so
+// existing setups carry over.
 public static class Store
 {
     public static readonly string Dir = FindDataFolder();
     public static readonly string ResetsPath = Path.Combine(Dir, "resets.txt");
     static readonly string SessionsPath = Path.Combine(Dir, "sessions.txt");
+    static readonly string BankedPath = Path.Combine(Dir, "banked.txt");
     static readonly string[] TimeFormats = { "H:mm", "HH:mm", "h:mm tt", "h:mmtt", "h tt", "htt" };
     const string StampFormat = "yyyy-MM-dd HH:mm:ss";
     const string Header =
@@ -48,7 +50,34 @@ public static class Store
             list.Add(new Reset { Name = parts[0].Trim(), Day = day, Time = time.TimeOfDay, SessionHours = hours });
         }
         LoadSessions(list);
+        LoadBanked(list);
         return list;
+    }
+
+    // One line per banked reset: Name | when it expires | "reminded", once its reminder has been sent.
+    static void LoadBanked(List<Reset> resets)
+    {
+        try
+        {
+            foreach (string line in File.ReadAllLines(BankedPath))
+            {
+                string[] p = line.Split('|');
+                if (p.Length < 2 || p.Length > 3 || !DateTime.TryParseExact(p[1].Trim(), StampFormat,
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime expires)) continue;
+                Reset? owner = resets.FirstOrDefault(r => r.Name == p[0].Trim());
+                owner?.AddBanked(expires, reminded: p.Length == 3 && p[2].Trim() == "reminded");
+            }
+        }
+        catch (IOException) { }  // nothing banked yet
+    }
+
+    public static void SaveBanked(IEnumerable<Reset> resets)
+    {
+        var sb = new StringBuilder();
+        foreach (Reset r in resets)
+            foreach (Banked b in r.Banked)
+                sb.Append($"{CleanName(r.Name)} | {b.Expires.ToString(StampFormat, CultureInfo.InvariantCulture)}{(b.Reminded ? " | reminded" : "")}\r\n");
+        try { WriteAtomic(BankedPath, sb.ToString()); } catch (Exception) { }
     }
 
     public static void SaveResets(IEnumerable<Reset> resets)
@@ -173,6 +202,7 @@ public class Settings
     public bool Notify = true;
     public int RemindWeekMinutes;                 // remind this long before a weekly reset; 0 = off
     public int RemindSessionMinutes;              // remind this long before a session window ends; 0 = off
+    public int RemindBankedMinutes = 1440;        // remind this long before a banked reset expires; 0 = off
     public bool HoverOpen;                        // in the taskbar, open the card on hover too, not only on click
     public System.Windows.Rect? WindowBounds;     // the app window's last size and position, in WPF units
     public bool WindowMaximized;
@@ -203,6 +233,7 @@ public class Settings
                     case "hover": s.HoverOpen = v == "1"; break;
                     case "remindweek": s.RemindWeekMinutes = int.Parse(v); break;
                     case "remindsession": s.RemindSessionMinutes = int.Parse(v); break;
+                    case "remindbanked": s.RemindBankedMinutes = int.Parse(v); break;
                     case "window":
                         string[] w = v.Split(',');
                         s.WindowBounds = new System.Windows.Rect(int.Parse(w[0]), int.Parse(w[1]), int.Parse(w[2]), int.Parse(w[3]));
@@ -224,7 +255,7 @@ public class Settings
     {
         string mode = Mode switch { DisplayMode.Island => "island", DisplayMode.Tray => "tray", _ => "taskbar" };
         var text = new StringBuilder($"mode={mode}\r\nampm={(Use12h ? 1 : 0)}\r\nnotify={(Notify ? 1 : 0)}\r\nhover={(HoverOpen ? 1 : 0)}\r\n" +
-            $"remindweek={RemindWeekMinutes}\r\nremindsession={RemindSessionMinutes}\r\n");
+            $"remindweek={RemindWeekMinutes}\r\nremindsession={RemindSessionMinutes}\r\nremindbanked={RemindBankedMinutes}\r\n");
         if (IslandPosition is { } p) text.Append($"island={(int)p.X},{(int)p.Y}\r\n");
         if (TaskbarSpot >= 0) text.Append($"taskbar={TaskbarSpot}\r\n");
         if (WindowBounds is { } b)

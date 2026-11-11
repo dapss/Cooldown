@@ -48,6 +48,21 @@ public class ResetView : INotifyPropertyChanged
     public string SessionResetText => (ShowUndo ? "Started. Resets at " : "Resets at ") + SessionEndClock;
     public bool ShowUndo => app.CanUndo(this);
 
+    public System.Collections.ObjectModel.ObservableCollection<Banked> Banked => Model.Banked;
+    public bool HasBanked => Model.Banked.Count > 0;
+
+    // "1 banked reset · expires in 2d 3h", "3 banked resets · next expires in 5h 10m"
+    public string BankedText
+    {
+        get
+        {
+            int n = Model.Banked.Count;
+            if (n == 0) return "";
+            string left = Format.Compact(Model.Banked[0].Expires - now);
+            return n == 1 ? "1 banked reset  ·  expires in " + left : n + " banked resets  ·  next expires in " + left;
+        }
+    }
+
     // One line for the tray menu and the list: "21h 04m 29s", plus the session when one is running.
     public string Summary => SessionRunning ? $"{Countdown}  ·  {Model.SessionHours}h: {Format.Compact(SessionLeft)}" : Countdown;
 

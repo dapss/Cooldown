@@ -13,6 +13,8 @@ weekly limit of every AI tool you use, and rolling limits like Claude's 5-hour s
   you. Started one by mistake? **Undo** is right there.
 - **Notifies you** when a weekly limit or a session window resets, with a **Start new session** button right on
   the notification. Optional reminders warn you before a reset, so you can use what's left first.
+- **Banked resets.** Saved a reset for later? Give Cooldown the date and time it expires, and it reminds you
+  before it goes to waste.
 - **Any AI,** each with its own reset day and time.
 - **Light on your PC:** about 10 to 15 MB in Task Manager while it sits in your taskbar.
 - **Fits Windows 11:** follows your light or dark mode, with the translucent Mica background.
@@ -60,6 +62,14 @@ Some limits are rolling windows that start when you start using the AI, such as 
 **Start**, or type in the reset time your AI shows you and click **Set**. When the window ends you get a
 notification, and it goes back to "not started" until your next session. Click **Start new session** on that
 notification to start the next window straight away.
+
+### Banked resets
+
+Some AIs let you keep a reset and use it whenever you like, until it expires. Open the AI in Cooldown and, under
+**Banked resets**, pick the date and time one expires and click **Add**. You can add as many as you have. The
+AI's card then shows how many are banked and when the next one expires. A day before one expires you get a
+reminder (change how long before, or turn it off, in **Settings** > **Reminders**), and you're told when one
+has expired, even if your PC was off at the time. Once you've used one, click **Remove** next to it.
 
 ### Notifications and reminders
 
@@ -128,8 +138,8 @@ data files, and run on every push along with a build of `Cooldown.exe`
 2. Right-click the tray icon and choose **Exit**.
 3. Delete the folder containing `Cooldown.exe`.
 
-Cooldown only writes `resets.txt`, `sessions.txt` and `settings.txt` (and `cooldown.log`, if something ever
-goes wrong) next to the exe (or, if that folder is read-only, in `%APPDATA%\Cooldown`), and the
+Cooldown only writes `resets.txt`, `sessions.txt`, `banked.txt` and `settings.txt` (and `cooldown.log`, if
+something ever goes wrong) next to the exe (or, if that folder is read-only, in `%APPDATA%\Cooldown`), and the
 **Start with Windows** entry, which step 1 removes. The first time
 it notifies you, Windows also records Cooldown as an app that sends notifications (its name and icon, so the
 buttons on a notification can start it). That's harmless to leave, and Windows lists it under

@@ -84,6 +84,8 @@
                            Visibility="{Binding SessionRunning, Converter={StaticResource Visible}}">
                     <Run Text="{Binding SessionLabel, Mode=OneWay}" /><Run Text=": " /><Run Text="{Binding SessionCountdown, Mode=OneWay}" />
                 </TextBlock>
+                <TextBlock Margin="0,2,0,0" Style="{StaticResource Caption}" Text="{Binding BankedText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasBanked, Converter={StaticResource Visible}}" />
             </StackPanel>
         </DataTemplate>
     </ui:FluentWindow.Resources>
@@ -227,6 +229,43 @@
                                 </StackPanel>
                             </ui:Card>
 
+                            <TextBlock Text="Banked resets" Style="{StaticResource SectionTitle}" />
+                            <ui:Card Padding="16,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="Savings24" FontSize="20" VerticalAlignment="Top" Margin="0,2,14,0" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Resets saved for later" FontWeight="SemiBold" />
+                                        <TextBlock Text="A reset your AI lets you keep and use whenever you like, until it expires. Cooldown reminds you before it does."
+                                                   Style="{StaticResource Caption}" />
+                                        <ItemsControl x:Name="BankedList" ItemsSource="{Binding Banked}" Margin="0,10,0,0" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <DockPanel Margin="0,0,0,6" LastChildFill="False">
+                                                        <TextBlock Text="{Binding ExpiresText}" VerticalAlignment="Center" />
+                                                        <ui:Button DockPanel.Dock="Right" Content="Remove" Click="RemoveBanked_Click" Margin="8,0,0,0"
+                                                                   ToolTip="Remove it once you've used it"
+                                                                   AutomationProperties.Name="{Binding ExpiresText, StringFormat=Remove the banked reset. {0}}" />
+                                                    </DockPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="Add one: when does it expire?" FontWeight="SemiBold" Margin="0,6,0,0" />
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <DatePicker x:Name="BankedDate" AutomationProperties.Name="Banked reset expiry date" MinWidth="150" Margin="0,0,12,6" />
+                                            <local:TimeInput x:Name="BankedTime" Label="Banked reset expiry time" Margin="0,0,10,6" />
+                                            <ui:Button x:Name="AddBankedButton" Content="Add" Icon="{ui:SymbolIcon Add24}" Click="AddBanked_Click" Margin="0,0,0,6"
+                                                       AutomationProperties.Name="Add a banked reset" />
+                                        </WrapPanel>
+                                        <TextBlock x:Name="BankedError" Foreground="{DynamicResource SystemFillColorCriticalBrush}" FontSize="12"
+                                                   Margin="0,2,0,0" Visibility="Collapsed" />
+                                    </StackPanel>
+                                </Grid>
+                            </ui:Card>
+
                             <ui:Button Content="Remove this AI" Icon="{ui:SymbolIcon Delete24}" Margin="0,28,0,0" Click="Remove_Click" />
                         </StackPanel>
                     </ScrollViewer>
@@ -314,7 +353,7 @@
                                         <ComboBoxItem Content="1 day before" Tag="1440" />
                                     </ComboBox>
                                 </ui:CardControl>
-                                <ui:CardControl Icon="{ui:SymbolIcon TimerOff24}">
+                                <ui:CardControl Icon="{ui:SymbolIcon TimerOff24}" Margin="0,0,0,4">
                                     <ui:CardControl.Header>
                                         <StackPanel>
                                             <TextBlock Text="Before a session window ends" FontWeight="SemiBold" />
@@ -327,6 +366,22 @@
                                         <ComboBoxItem Content="15 minutes before" Tag="15" />
                                         <ComboBoxItem Content="30 minutes before" Tag="30" />
                                         <ComboBoxItem Content="1 hour before" Tag="60" />
+                                    </ComboBox>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Savings24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="Before a banked reset expires" FontWeight="SemiBold" />
+                                            <TextBlock Text="So a reset you saved doesn't go to waste" Style="{StaticResource Caption}" />
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ComboBox x:Name="RemindBankedBox" MinWidth="170" SelectionChanged="Remind_Changed"
+                                              AutomationProperties.Name="Remind me before a banked reset expires">
+                                        <ComboBoxItem Content="Off" Tag="0" />
+                                        <ComboBoxItem Content="1 hour before" Tag="60" />
+                                        <ComboBoxItem Content="1 day before" Tag="1440" />
+                                        <ComboBoxItem Content="3 days before" Tag="4320" />
+                                        <ComboBoxItem Content="1 week before" Tag="10080" />
                                     </ComboBox>
                                 </ui:CardControl>
                             </StackPanel>

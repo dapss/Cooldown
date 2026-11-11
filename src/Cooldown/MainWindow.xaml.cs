@@ -24,6 +24,8 @@ public partial class MainWindow : FluentWindow
         for (int i = 0; i < 7; i++) DayBox.Items.Add(((DayOfWeek)((i + 1) % 7)).ToString());  // Monday first
         TimeBox.ValueChanged += Time_Changed;
         SessionTimeBox.Value = DateTime.Now.AddHours(5).TimeOfDay;
+        BankedDate.SelectedDate = DateTime.Today.AddDays(7);
+        BankedDate.DisplayDateStart = DateTime.Today;
         DataPath.Text = Store.Dir;
         VersionText.Text = "Cooldown " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) + "  ·  MIT license";
         // updateAccents: false, so Windows' accent color doesn't replace Cooldown's mint.
@@ -125,6 +127,7 @@ public partial class MainWindow : FluentWindow
         HoverSwitch.IsChecked = app.Settings.HoverOpen;
         SelectByTag(RemindWeekBox, app.Settings.RemindWeekMinutes);
         SelectByTag(RemindSessionBox, app.Settings.RemindSessionMinutes);
+        SelectByTag(RemindBankedBox, app.Settings.RemindBankedMinutes);
         RemindersPanel.IsEnabled = app.Settings.Notify;
         StartupSwitch.IsChecked = Startup.Enabled;
         loading = false;
@@ -160,6 +163,10 @@ public partial class MainWindow : FluentWindow
         HoursBox.IsEnabled = view.Model.SessionHours > 0;
         SessionTimeBox.ApplyClockFormat();
         SessionTimeBox.Value = (view.Model.SessionEnd ?? DateTime.Now.AddHours(Math.Max(1, view.Model.SessionHours))).TimeOfDay;
+        BankedTime.ApplyClockFormat();
+        BankedTime.Value = view.Model.Time;
+        BankedError.Visibility = Visibility.Collapsed;
+        BankedList.Items.Refresh();  // their times, after a change between 12- and 24-hour time
         loading = false;
         ShowPanel(ResetPanel);
     }
@@ -183,7 +190,7 @@ public partial class MainWindow : FluentWindow
         var confirm = new Wpf.Ui.Controls.MessageBox
         {
             Title = "Remove " + view.Name + "?",
-            Content = "Its countdown and any running session will be removed.",
+            Content = "Its countdown, any running session and its banked resets will be removed.",
             PrimaryButtonText = "Remove",
             CloseButtonText = "Cancel",
         };
@@ -250,6 +257,24 @@ public partial class MainWindow : FluentWindow
         if (current != null) app.SetSessionEnd(current, null);
     }
 
+    // ---- banked resets ----
+
+    void AddBanked_Click(object sender, RoutedEventArgs e)
+    {
+        if (current == null) return;
+        DateTime? expires = BankedDate.SelectedDate?.Date.Add(BankedTime.Value);
+        string? problem = expires == null ? "Pick the date it expires."
+            : expires <= DateTime.Now ? "That time has already passed." : null;
+        BankedError.Text = problem ?? "";
+        BankedError.Visibility = problem == null ? Visibility.Collapsed : Visibility.Visible;
+        if (problem == null) app.AddBanked(current, expires!.Value);
+    }
+
+    void RemoveBanked_Click(object sender, RoutedEventArgs e)
+    {
+        if (current != null && sender is FrameworkElement { DataContext: Banked banked }) app.RemoveBanked(current, banked);
+    }
+
     // ---- settings ----
 
     void Mode_Checked(object sender, RoutedEventArgs e)
@@ -264,6 +289,7 @@ public partial class MainWindow : FluentWindow
         app.SetUse12h(AmPmSwitch.IsChecked == true);
         TimeBox.ApplyClockFormat();
         SessionTimeBox.ApplyClockFormat();
+        BankedTime.ApplyClockFormat();
     }
 
     void Hover_Toggled(object sender, RoutedEventArgs e)
@@ -281,8 +307,8 @@ public partial class MainWindow : FluentWindow
 
     void Remind_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (loading || RemindWeekBox.SelectedItem == null || RemindSessionBox.SelectedItem == null) return;
-        app.SetReminders(TagOf(RemindWeekBox), TagOf(RemindSessionBox));
+        if (loading || RemindWeekBox.SelectedItem == null || RemindSessionBox.SelectedItem == null || RemindBankedBox.SelectedItem == null) return;
+        app.SetReminders(TagOf(RemindWeekBox), TagOf(RemindSessionBox), TagOf(RemindBankedBox));
     }
 
     static int TagOf(ComboBox box) => box.SelectedItem is ComboBoxItem { Tag: string t } ? int.Parse(t) : 0;

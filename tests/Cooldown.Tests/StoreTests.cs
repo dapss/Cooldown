@@ -12,7 +12,7 @@ public class StoreTests
 
     public StoreTests()
     {
-        foreach (string f in new[] { "resets.txt", "sessions.txt", "settings.txt", "cooldown.log" }) File.Delete(P(f));
+        foreach (string f in new[] { "resets.txt", "sessions.txt", "banked.txt", "settings.txt", "cooldown.log" }) File.Delete(P(f));
         foreach (string f in Temps()) File.Delete(f);
     }
 
@@ -126,6 +126,72 @@ public class StoreTests
         List<Reset> list = Store.LoadResets(new List<string>());
         Assert.Equal(end, list[0].SessionEnd);
         Assert.Null(list[1].SessionEnd);
+    }
+
+    [Fact]
+    public void Banked_resets_are_kept_soonest_first()
+    {
+        Reset r = Weekly("Claude");
+        r.AddBanked(new DateTime(2030, 3, 1, 12, 0, 0));
+        r.AddBanked(new DateTime(2030, 1, 1, 12, 0, 0));
+        r.AddBanked(new DateTime(2030, 2, 1, 12, 0, 0));
+        Assert.Equal(new[] { 1, 2, 3 }, r.Banked.Select(b => b.Expires.Month));
+    }
+
+    [Fact]
+    public void Banked_resets_are_kept_across_a_reload()
+    {
+        Reset claude = Weekly("Claude"), gpt = Weekly("GPT");
+        claude.AddBanked(new DateTime(2030, 2, 1, 12, 0, 0));
+        claude.AddBanked(new DateTime(2030, 1, 1, 9, 30, 0), reminded: true);
+        gpt.AddBanked(new DateTime(2030, 5, 5, 0, 0, 0));
+        Store.SaveBanked(new[] { claude, gpt });
+        Store.SaveResets(new[] { claude, gpt });
+
+        List<Reset> list = Store.LoadResets(new List<string>());
+        Assert.Equal(new[] { new DateTime(2030, 1, 1, 9, 30, 0), new DateTime(2030, 2, 1, 12, 0, 0) }, list[0].Banked.Select(b => b.Expires));
+        Assert.Equal(new[] { true, false }, list[0].Banked.Select(b => b.Reminded));
+        Assert.Equal(new DateTime(2030, 5, 5, 0, 0, 0), Assert.Single(list[1].Banked).Expires);
+    }
+
+    [Fact]
+    public void Banked_resets_follow_a_rename_and_go_with_a_removed_AI()
+    {
+        Reset claude = Weekly("Claude"), gpt = Weekly("GPT");
+        claude.AddBanked(new DateTime(2030, 1, 1, 12, 0, 0));
+        gpt.AddBanked(new DateTime(2030, 5, 5, 12, 0, 0));
+        claude.Name = "Claude Max";
+        Store.SaveBanked(new[] { claude });  // GPT removed
+        Store.SaveResets(new[] { claude });
+
+        Reset only = Assert.Single(Store.LoadResets(new List<string>()));
+        Assert.Equal("Claude Max", only.Name);
+        Assert.Single(only.Banked);
+        Assert.DoesNotContain("GPT", File.ReadAllText(P("banked.txt")));
+    }
+
+    [Fact]
+    public void Lines_in_banked_txt_it_cannot_read_are_skipped()
+    {
+        File.WriteAllLines(P("resets.txt"), new[] { "Claude | Tuesday | 12:00" });
+        File.WriteAllLines(P("banked.txt"), new[]
+        {
+            "Claude | 2030-01-01 12:00:00",
+            "Claude | not a date",
+            "Nobody | 2030-01-01 12:00:00",
+            "Claude",
+            "",
+        });
+        Reset only = Assert.Single(Store.LoadResets(new List<string>()));
+        Assert.Equal(new DateTime(2030, 1, 1, 12, 0, 0), Assert.Single(only.Banked).Expires);
+    }
+
+    [Fact]
+    public void Banked_reminder_setting_defaults_to_a_day_and_is_saved()
+    {
+        Assert.Equal(1440, Settings.Load().RemindBankedMinutes);
+        new Settings { RemindBankedMinutes = 4320 }.Save();
+        Assert.Equal(4320, Settings.Load().RemindBankedMinutes);
     }
 
     // 2.1.1: saves go to a temporary file that replaces the real one.

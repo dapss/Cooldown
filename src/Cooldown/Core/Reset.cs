@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 
 namespace Cooldown.Core;
@@ -12,8 +13,18 @@ public class Reset
     public DateTime? SessionEnd;  // when the current session window resets; null = not started
     public DateTime LastNext;     // runtime only: lets the clock spot the moment a weekly reset passes
     public TimeSpan? WeekLeftBefore, SessionLeftBefore;  // runtime only: time left at the last tick, for reminders
+    public ObservableCollection<Banked> Banked { get; } = new();  // resets saved for later, soonest to expire first
 
     public string SessionLabel => SessionHours + "-hour limit";
+
+    public Banked AddBanked(DateTime expires, bool reminded = false)
+    {
+        var banked = new Banked { Expires = expires, Reminded = reminded };
+        int at = 0;
+        while (at < Banked.Count && Banked[at].Expires <= expires) at++;
+        Banked.Insert(at, banked);
+        return banked;
+    }
 
     public DateTime Next(DateTime now)
     {
@@ -28,6 +39,15 @@ public class Reset
     {
         Name = Name, Day = Day, Time = Time, SessionHours = SessionHours, SessionEnd = SessionEnd, LastNext = LastNext
     };
+}
+
+// A banked reset: one the AI lets you keep and use whenever you like, until it expires.
+public class Banked
+{
+    public DateTime Expires;
+    public bool Reminded;  // the "expires soon" reminder has been sent; saved, so restarting doesn't repeat it
+
+    public string ExpiresText => "Expires " + Format.When(Expires);
 }
 
 public static class Format

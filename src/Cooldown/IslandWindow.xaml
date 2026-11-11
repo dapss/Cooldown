@@ -110,6 +110,8 @@
                 </Grid>
                 <local:Bar Fraction="{Binding WeekProgress}" Style="{StaticResource WeekBar}" Margin="0,9,0,0" />
                 <TextBlock Text="{Binding ScheduleText}" Style="{StaticResource Small}" Margin="0,6,0,0" />
+                <TextBlock Text="{Binding BankedText}" Style="{StaticResource Small}" Margin="0,3,0,0"
+                           Visibility="{Binding HasBanked, Converter={StaticResource Visible}}" />
 
                 <!-- A running session: click it to change it in the app -->
                 <Button Style="{StaticResource Ghost}" Command="{Binding OpenCommand}" Margin="-8,8,-8,-4" Padding="8,6,8,6"

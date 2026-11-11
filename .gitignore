@@ -2,6 +2,7 @@
 resets.txt
 settings.txt
 sessions.txt
+banked.txt
 cooldown.log
 *.tmp
 bin/
