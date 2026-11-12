@@ -14,6 +14,7 @@ What changed in each version of Cooldown. When a version is released, its sectio
 
 ### Fixed
 - **No more empty Cooldown window in Alt+Tab** after you've used Cooldown's menu.
+- **The countdown in the taskbar no longer disappears for a moment** when you click the taskbar or switch apps.
 
 ### Maintenance
 - Every change is now built and tested automatically, and a version tag builds `Cooldown.exe` and publishes the release.

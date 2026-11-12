@@ -59,7 +59,7 @@ public partial class IslandWindow : Window
     // Getting out of the way
     bool onPill, clickedThrough, fullScreen, clickThrough, hoverPill, noHoverOpen;
     Native.POINT restAt;
-    double restSince, offCardSince = -1, lastTopmost;
+    double restSince, offCardSince = -1, lastTopmost, watchCloselyUntil;
     double ghost, ghostTarget;  // 0 = solid, 1 = faded away
 
     // Dragging along the taskbar
@@ -76,8 +76,7 @@ public partial class IslandWindow : Window
         this.app = app;
         InitializeComponent();
         CardList.ItemsSource = app.Resets;
-        hwnd = new WindowInteropHelper(this).EnsureHandle();
-        // No Alt+Tab entry, and never takes focus from the app you're using.
+        hwnd = new WindowInteropHelper(this).EnsureHandle();        // No Alt+Tab entry, and never takes focus from the app you're using.
         int ex = Native.GetWindowLong(hwnd, Native.GWL_EXSTYLE);
         Native.SetWindowLong(hwnd, Native.GWL_EXSTYLE, ex | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE);
         scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
@@ -86,12 +85,17 @@ public partial class IslandWindow : Window
 
         watch.Tick += (_, _) => Watch();
         IsVisibleChanged += (_, _) => { if (IsVisible) watch.Start(); else watch.Stop(); };
-        // Clicking the taskbar raises it over every other always-on-top window, so step back in front.
-        // Not for our own windows, such as the menu, which must stay in front of the island.
+        // Clicking the taskbar, or switching apps, raises the taskbar over every other always-on-top
+        // window, often a moment after the switch itself. So step back in front at once, then keep a
+        // close watch for a second to catch the taskbar rising again. Not for our own windows, such as
+        // the menu, which must stay in front of the island.
         foregroundHook = (_, _, fg, _, _, _, _) =>
         {
             Native.GetWindowThreadProcessId(fg, out int pid);
-            if (docked && IsVisible && pid != Environment.ProcessId) KeepOnTop();
+            if (!docked || !IsVisible || pid == Environment.ProcessId) return;
+            KeepOnTop();
+            watchCloselyUntil = Ms + 1000;
+            watch.Interval = TimeSpan.FromMilliseconds(30);
         };
         Native.SetWinEventHook(3, 3, IntPtr.Zero, foregroundHook, 0, 0, 0);  // EVENT_SYSTEM_FOREGROUND
         app.Resets.CollectionChanged += (_, _) => { if (IsVisible) Remeasure(); };
@@ -151,6 +155,16 @@ public partial class IslandWindow : Window
     {
         lastTopmost = Ms;
         Native.SetWindowPos(hwnd, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);  // HWND_TOPMOST; no size, move or activate
+    }
+
+    // Whether the taskbar is in front of the island, covering it. Only the few windows above the
+    // island are looked at.
+    bool TaskbarInFront()
+    {
+        IntPtr tb = Native.FindWindow("Shell_TrayWnd", null);
+        for (IntPtr h = Native.GetWindow(hwnd, 3); h != IntPtr.Zero; h = Native.GetWindow(h, 3))  // GW_HWNDPREV
+            if (h == tb) return true;
+        return false;
     }
 
     // Reads where the taskbar is and whether it has slid away (auto-hide).
@@ -436,7 +450,7 @@ public partial class IslandWindow : Window
     // Runs a few times a second; quicker while the mouse is on the island or it's fading.
     void Watch()
     {
-        if (fullScreen) return;
+        if (fullScreen) { Pace(150); return; }
         Native.GetCursorPos(out Native.POINT c);
         var cursor = new Point(c.X, c.Y);
         double now = Ms;
@@ -446,8 +460,8 @@ public partial class IslandWindow : Window
             bool wasHidden = taskbarHidden;
             RefreshTaskbar();
             if (taskbarHidden != wasHidden) Apply();
-            if (Gone) return;
-            if (now - lastTopmost > 500 && !app.MenuOpen) KeepOnTop();
+            if (Gone) { Pace(150); return; }
+            if (!app.MenuOpen && (now - lastTopmost > 500 || TaskbarInFront())) KeepOnTop();
         }
 
         if (docked && target == 0 && !animating)
@@ -518,8 +532,12 @@ public partial class IslandWindow : Window
         ghost = Motion && Math.Abs(ghostTarget - ghost) > 0.01 ? ghost + (ghostTarget - ghost) * 0.4 : ghostTarget;
         Apply();
 
-        double interval = onPill || target == 1 || ghost != ghostTarget ? 30 : 150;
-        if (watch.Interval.TotalMilliseconds != interval) watch.Interval = TimeSpan.FromMilliseconds(interval);
+        Pace(onPill || target == 1 || ghost != ghostTarget || (docked && now < watchCloselyUntil) ? 30 : docked ? 100 : 150);
+    }
+
+    void Pace(double ms)
+    {
+        if (watch.Interval.TotalMilliseconds != ms) watch.Interval = TimeSpan.FromMilliseconds(ms);
     }
 
     // Applies the fade and click-through for the current state.

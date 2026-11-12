@@ -24,6 +24,7 @@ static class Native
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, int flags);
     [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
     [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int pid);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint cmd);
 
     public delegate void WinEventProc(IntPtr hook, int ev, IntPtr hwnd, int obj, int child, int thread, int time);
     [DllImport("user32.dll")] public static extern IntPtr SetWinEventHook(int min, int max, IntPtr module, WinEventProc proc, int pid, int tid, int flags);
