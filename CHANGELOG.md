@@ -3,7 +3,7 @@
 What changed in each version of Cooldown. When a version is released, its section here becomes the notes on its
 [GitHub release](https://github.com/dapss/Cooldown/releases).
 
-## Unreleased
+## 2.2.0 (2026-11-16)
 
 ### Added
 - **Banked resets.** If your AI lets you keep a reset for later, add the date and time it expires under **Banked resets**. Cooldown shows how many you have and when the next one expires, reminds you a day before (change it in **Settings > Reminders**), and tells you when one has expired, even if your PC was off at the time.
